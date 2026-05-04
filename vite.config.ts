@@ -6,6 +6,9 @@ import {defineConfig, loadEnv} from 'vite';
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
   return {
+    // GitHub Pages serves the site under /Pipette-Practice/.
+    // Local dev (mode === 'development') uses '/' so HMR and dev paths work.
+    base: mode === 'production' ? '/Pipette-Practice/' : '/',
     plugins: [react(), tailwindcss()],
     define: {
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
