@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import type { WorldPointRef } from './usePointerWorld';
-import { useStore, WorkflowStep } from '../store';
+import { useStore, WorkflowStep, FailureMode } from '../store';
 import { findHover } from '../sim/hover';
 import { depthFromHoldMs } from '../sim/depth';
 import { TIP_RACK, TRASH, SAMPLE_TUBES, WELLS } from './targets';
@@ -92,7 +92,14 @@ export function InteractionDriver({ pointerRef }: DriverProps) {
     const lowered = lower.depth >= 1;
     if (state.isLowered !== lowered) state.setIsLowered(lowered);
 
-    // 3. Tip pickup transition
+    // 3. Failure: holding too long over a well = puncture.
+    if (lower.isPuncture && hover?.kind === 'well') {
+      state.setFailure(FailureMode.PUNCTURE);
+      holdStart.current = null;
+      return;
+    }
+
+    // 4. Tip pickup transition.
     if (
       state.step === WorkflowStep.GET_TIP &&
       hover?.kind === 'tip-rack' &&
