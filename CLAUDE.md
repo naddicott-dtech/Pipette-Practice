@@ -43,6 +43,13 @@ Guidance for AI agents (and humans) working on this repo.
 - `npm run lint` — `tsc --noEmit`
 - `npm test` — Vitest run
 
+## Refactor plan
+
+The active multi-chunk refactor and design rationale live in
+[`docs/fix-plan.md`](docs/fix-plan.md). Read it before making
+non-trivial changes; update it when you finish a chunk or change
+direction.
+
 ## Working agreements for agents
 
 - Prefer fixing root causes over patching symptoms. If a coordinate system is wrong, fix the coordinate system; don't add fudge factors.
