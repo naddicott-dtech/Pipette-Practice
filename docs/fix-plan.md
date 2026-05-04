@@ -274,44 +274,274 @@ tests), ~30 LoC edited.
 ## Chunk B — Coordinate system + camera (the playability fix)
 
 **Why second:** A is mechanical; B is the real bug. Until the cursor
-maps to world space, no amount of rule cleanup will feel right.
+maps to world space, no amount of rule cleanup will feel right. This
+chunk also introduces the dual-camera rig and makes PUNCTURE reachable
+for the first time.
 
-**Outline**
+### Acceptance criteria
 
-- New `src/scene/usePointerWorld.ts` hook: raycast camera+pointer
-  against an invisible Y=0 plane, return `{ x, z }` in world units.
-- New `src/sim/hover.ts` pure function: given a world point and the
-  targets, return a `HoverTarget`. Generous click tolerance is just
-  the radius in `targets.ts`.
-- `src/scene/CameraRig.tsx`: declarative camera that interpolates
-  between `OVERVIEW` and `CLOSEUP` based on `isLowered || pointerOverWell`.
-  Replace `OrbitControls`. The orbit removal is the entire reason the
-  current build feels off-axis.
-- `Pipette.tsx` shrinks: it consumes `pointerWorld` and `hoverTarget`
-  from hooks/store, and lerps to them. No more direct mouse math, no
-  more inline interaction rules. The dead ground-ring at the
-  current `Pipette.tsx:153` gets replaced by a proper indicator that
-  reads the live world point.
-- Hold-to-lower depth ramp: capture keydown/keyup timestamps, expose
-  `loweredDepth: 0..1` to the store. Over a well: `> LOWER_HOLD_FULL_MS`
-  is correct, `> LOWER_HOLD_PUNCTURE_MS` triggers PUNCTURE.
+- Cursor controls pipette over actual world objects: pointing at the
+  tip rack moves the pipette over the tip rack, etc. No screen-space
+  approximations.
+- `OrbitControls` is gone. Camera is locked to two presets and animates
+  between them automatically.
+- Hold Space → pipette descends smoothly toward the appropriate target;
+  release → returns to hover height.
+- Holding Space *too long* over a well triggers `PUNCTURE` (this
+  failure was unreachable before).
+- All Chunk A tests still pass; new chunk adds ≥ 15 unit tests for
+  pure helpers.
+- Existing happy path (GET_TIP → INTAKE_SAMPLE → LOAD_WELL → RUN_GEL,
+  single tube/well) still works end-to-end. Multi-well + new failure
+  pedagogy stay deferred to C/D.
 
-**Tests**
+### Files added
 
-- `usePointerWorld` is a pure raycast wrapper; test the geometry helper
-  separately (`projectMouseOntoPlane(camera, ndc, planeY)`).
-- `hover.ts` is a pure function — exhaustive table tests:
-  inside-tip-rack, inside-well-3, on-the-edge, between-targets-with-radius-overlap.
-- `loweredDepth` ramp is timing math; test as `depthFromHoldDuration(ms)`.
+- `src/sim/geometry.ts` — pure `projectScreenToPlane(camera, ndc, planeY)`.
+- `src/sim/hover.ts` — pure `findHover(point, targets) → HoverTarget`.
+- `src/sim/depth.ts` — pure `depthFromHoldMs(ms) → { depth, isPuncture }`.
+- `src/sim/geometry.test.ts`, `src/sim/hover.test.ts`, `src/sim/depth.test.ts`.
+- `src/scene/usePointerWorld.ts` — frame hook returning the world
+  point under the cursor.
+- `src/scene/CameraRig.tsx` — declarative camera that animates between
+  `CAMERA.OVERVIEW` and `CAMERA.CLOSEUP`.
+- `src/scene/Cursor.tsx` — ground-plane ring at the world pointer.
+- `src/scene/InteractionDriver.tsx` — non-rendering component that runs
+  hover + lower-depth + simple state transitions each frame.
 
-**Acceptance**
+### Files edited
 
-- Clicking near the tip rack actually triggers GET_TIP.
-- Pipette never strays off the table when moving the cursor over the
-  scene.
-- Camera glides between overview and close-up automatically; no orbit.
-- Existing failure modes still reachable as before (plus PUNCTURE,
-  which now is reachable for the first time).
+- `src/store.ts` — add `pointer: { x, z } | null`, `hoverTarget: HoverTarget`,
+  `loweredDepth: number`. Keep legacy flags (`isNearTips`, `isNearSample`,
+  `activeWellIndex`) but compute them from `hoverTarget` so existing
+  consumers in C-deferred code keep working.
+- `src/components/Pipette.tsx` — slim down. Reads `pointer`,
+  `hoverTarget`, `loweredDepth` from store. Lerps to world position.
+  Removes inline interaction detection and the dead ground-ring at
+  line 153 (replaced by `<Cursor>` in the scene).
+- `src/components/UIOverlay.tsx` — `showPlunger` derived from
+  `hoverTarget` rather than legacy flags.
+- `src/components/GelBox.tsx` — alignment guide reads `activeWellIndex`
+  (now driven by hover) instead of hardcoding `well.id === 0`.
+- `src/App.tsx` — replace `OrbitControls` + `<PerspectiveCamera>` with
+  `<CameraRig>`. Mount `<Cursor>` and `<InteractionDriver>`.
+
+### Module specifications
+
+```ts
+// src/sim/geometry.ts
+import * as THREE from 'three';
+
+/**
+ * Project a normalized device coordinate (-1..1 on x,y) onto the y=planeY
+ * world plane through the given camera. Returns null if the ray is parallel
+ * to the plane (rare, only at extreme angles).
+ *
+ * Pure: stateless. Camera position/rotation/projection drive the answer.
+ */
+export function projectScreenToPlane(
+  camera: THREE.Camera,
+  ndc: { x: number; y: number },
+  planeY: number,
+): { x: number; z: number } | null;
+```
+
+```ts
+// src/sim/hover.ts
+import type { HoverTarget } from './types';
+import type { IndexedTarget, Target } from '../scene/targets';
+
+export interface TargetSet {
+  tipRack: Target;
+  trash: Target;
+  sampleTubes: IndexedTarget[];
+  wells: IndexedTarget[];
+}
+
+/**
+ * Given a world point on the table plane and the set of interactable
+ * targets, return the closest target whose Manhattan distance is within
+ * its radius. Wells beat tubes beat tip-rack only on exact ties (which
+ * shouldn't occur given the layout). Returns null if the point is not
+ * over any target.
+ */
+export function findHover(
+  point: { x: number; z: number },
+  targets: TargetSet,
+): HoverTarget;
+```
+
+```ts
+// src/sim/depth.ts
+import { PIPETTE } from './config';
+
+export interface LowerState {
+  depth: number;        // 0..1, lerp factor for Y position
+  isPuncture: boolean;  // true once held past PUNCTURE threshold
+}
+
+/**
+ * Map a Space-key hold duration to a lowering depth and a puncture flag.
+ *  - 0 ms          → depth 0, no puncture
+ *  - LOWER_HOLD_FULL_MS    → depth 1, no puncture
+ *  - LOWER_HOLD_PUNCTURE_MS+ → depth 1, isPuncture true
+ *  - between FULL and PUNCTURE → depth 1 (already at floor), no puncture yet
+ */
+export function depthFromHoldMs(holdMs: number): LowerState;
+
+/** Linear interpolation helper for Y from depth and target. */
+export function loweredY(hoverY: number, targetY: number, depth: number): number;
+```
+
+```ts
+// src/scene/usePointerWorld.ts
+import { useRef } from 'react';
+import { useFrame, useThree } from '@react-three/fiber';
+import { projectScreenToPlane } from '../sim/geometry';
+
+/**
+ * Returns a ref whose .current is the world point on y=0 under the cursor,
+ * or null if off-plane. Updated each frame before render. The ref pattern
+ * avoids re-renders on every mouse move.
+ */
+export function usePointerWorld(): React.MutableRefObject<{ x: number; z: number } | null>;
+```
+
+```ts
+// src/scene/CameraRig.tsx
+/**
+ * Mounts a single PerspectiveCamera and animates its position/fov between
+ * CAMERA.OVERVIEW and CAMERA.CLOSEUP based on store state:
+ *   blend = clamp(loweredDepth + (hoverTarget?.kind === 'well' ? 0.4 : 0), 0, 1)
+ * Uses useFrame + THREE.MathUtils.damp for smooth, framerate-independent motion.
+ * No OrbitControls.
+ */
+export function CameraRig(): JSX.Element;
+```
+
+```ts
+// src/scene/Cursor.tsx
+/**
+ * A ground-plane ring rendered at the current world pointer.
+ * Color reflects readiness: red when no tip needed/held, green when
+ * over a valid target for the current step. Read-only — visual feedback
+ * for "where am I aiming". Replaces the dead ring at Pipette.tsx:153.
+ */
+export function Cursor(): JSX.Element | null;
+```
+
+```ts
+// src/scene/InteractionDriver.tsx
+/**
+ * Non-rendering component. Runs each frame:
+ *  1. Read pointerWorld from usePointerWorld.
+ *  2. Compute hoverTarget = findHover(pointerWorld, targetSet).
+ *  3. Update store.pointer, store.hoverTarget. Mirror to legacy flags
+ *     for components not yet migrated.
+ *  4. Track Space-hold timestamps; compute loweredDepth via depthFromHoldMs.
+ *  5. If hover.kind === 'well' && isPuncture → setFailure(PUNCTURE).
+ *  6. If hover.kind === 'tip-rack' && step === GET_TIP && depth >= 1 →
+ *     advance step (existing transition, just relocated).
+ *
+ * All other rules stay where they are; full migration is Chunk C.
+ */
+export function InteractionDriver(): null;
+```
+
+### Store delta
+
+```ts
+// add to SimulationState
+pointer: { x: number; z: number } | null;
+hoverTarget: HoverTarget;       // from src/sim/types
+loweredDepth: number;            // 0..1
+
+// new actions
+setPointer(p: { x: number; z: number } | null): void;
+setHoverTarget(t: HoverTarget): void;
+setLoweredDepth(d: number): void;
+```
+
+The legacy `isNearTips`, `isNearSample`, `activeWellIndex`, `isLowered`
+remain in the store but are *derived* by InteractionDriver from the new
+fields each frame so older consumers keep working. C deletes them.
+
+### Step-by-step execution
+
+Four commits, each leaves the build green and ships independently if we
+need to bail:
+
+1. **B1 — Pure helpers + tests.** Add `geometry.ts`, `hover.ts`,
+   `depth.ts` and their test files. No integration, no consumers. Tests
+   alone justify the commit. ~15 new unit tests.
+
+2. **B2 — Pointer hook + camera rig + cursor.** Add
+   `usePointerWorld`, `CameraRig`, `Cursor`. In `App.tsx`, replace
+   `OrbitControls` and `<PerspectiveCamera>` with `<CameraRig>` and
+   mount `<Cursor>`. Pipette continues to follow `state.mouse` for now —
+   we are *adding* a parallel pipeline. After this commit the camera
+   is locked and the ground cursor follows the mouse correctly, but
+   the pipette still uses the old screen-space math.
+
+3. **B3 — Switch Pipette to world pointer + add InteractionDriver.**
+   Add store fields, `InteractionDriver`. Pipette reads `pointer` and
+   `loweredDepth` from store and lerps. Inline interaction detection
+   and dead ground-ring removed from `Pipette.tsx`. Existing legacy
+   flags continue to populate via mirroring. This is the *playability*
+   commit.
+
+4. **B4 — Wire PUNCTURE + cleanup.** InteractionDriver fires
+   `setFailure(PUNCTURE)` when over a well past
+   `LOWER_HOLD_PUNCTURE_MS`. UIOverlay copy already covers PUNCTURE.
+   Smoke-test the full cycle. Update `GelBox` alignment guide to read
+   `activeWellIndex`.
+
+### Tests
+
+- `geometry.test.ts` — table tests for `projectScreenToPlane`:
+  ndc=(0,0) at known camera position projects to expected world point;
+  off-axis ndc projects symmetrically; horizon-grazing ndc returns null.
+  Uses a stub `THREE.PerspectiveCamera` with known position/lookAt.
+- `hover.test.ts` — exhaustive: point at tip-rack center → tip-rack;
+  point at well[2] center → well index 2; point on the edge → still
+  detected; point in dead zone between targets → null; point past
+  table extents → null.
+- `depth.test.ts` — boundary cases: 0 ms → {0, false}, 150 ms → {0.5,
+  false}, 300 ms → {1, false}, 599 ms → {1, false}, 600 ms →
+  {1, true}, 1500 ms → {1, true}.
+- Property test (optional): `loweredY` is monotone in `depth`.
+
+### Risks and how we handle them
+
+- **Frame ordering.** `usePointerWorld` writes a ref; `Pipette.tsx`
+  reads it via store. To avoid one-frame lag we update the store
+  inside `InteractionDriver`'s `useFrame` *before* `Pipette` reads it.
+  React-three-fiber preserves call order of `useFrame`, so we mount
+  `InteractionDriver` before `Pipette` in `App.tsx`.
+- **PerspectiveCamera + makeDefault swap is finicky.** We avoid the
+  swap by using one camera and animating its position/fov.
+- **Window blur while Space is held.** Add a `blur` listener that
+  treats it as keyup — otherwise depth gets stuck at 1 and PUNCTURE
+  fires when the user comes back.
+- **Mobile/touch.** Out of scope per warning banner; no work here.
+- **Performance.** One raycast per frame is cheap. No `setInterval`s
+  introduced. `Cursor` re-renders only when its position prop actually
+  changes (use ref + frame-mutated mesh, not React state).
+
+### What's deliberately NOT in B
+
+- Multi-well sequential loading (Chunk D).
+- Per-tube hover triggering INTAKE for the right tube (Chunk C — the
+  full rules layer handles this).
+- Failure modes other than PUNCTURE (Chunk C).
+- Trash bin / discard tip / NO_FRESH_TIP (Chunks C/D).
+- README cleanup, removing Gemini env (Chunk D).
+
+### Estimated size
+
+4 commits, ~600 LoC added (mostly new files + tests), ~80 LoC removed
+from `Pipette.tsx`, ~30 LoC edited in `App.tsx` / `UIOverlay.tsx` /
+`GelBox.tsx`. Test count goes from 25 → ~45.
 
 ---
 
