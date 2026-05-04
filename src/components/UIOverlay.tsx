@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useStore, WorkflowStep, FailureMode } from '../store';
 import { motion, AnimatePresence } from 'motion/react';
 import { Pipette as PipetteIcon, FlaskConical, Droplets, Play, RefreshCcw, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { PLUNGER, VOLUME, WORKFLOW } from '../sim/config';
 
 export function UIOverlay() {
   const { 
@@ -23,28 +24,29 @@ export function UIOverlay() {
 
     // INTAKE LOGIC
     if (step === WorkflowStep.INTAKE_SAMPLE && hasTip) {
-      // If we were at soft stop (val=0.7) and move UP
-      if (prev >= 0.65 && val < prev) {
-        const intakeAmount = (0.7 - val) / 0.7;
-        setLiquid(Math.min(1, liquidInTip + intakeAmount));
-        if (val === 0 && liquidInTip > 0.8) setStep(WorkflowStep.LOAD_WELL);
+      const softLow = PLUNGER.SOFT_STOP - PLUNGER.SOFT_STOP_TOLERANCE;
+      if (prev >= softLow && val < prev) {
+        const intakeAmount = (PLUNGER.SOFT_STOP - val) / PLUNGER.SOFT_STOP;
+        setLiquid(Math.min(VOLUME.FULL, liquidInTip + intakeAmount));
+        if (val === PLUNGER.REST && liquidInTip > VOLUME.FULL - 0.2) {
+          setStep(WorkflowStep.LOAD_WELL);
+        }
       }
     }
 
     // EJECT LOGIC
     if (step === WorkflowStep.LOAD_WELL && liquidInTip > 0) {
-      // Moving DOWN ejects
       if (val > prev) {
-         const drop = (val - prev) * 2;
-         setLiquid(Math.max(0, liquidInTip - drop));
-         
-         if (activeWellIndex !== null) {
-            addDnaToWell(activeWellIndex, drop);
-         }
-         
-         if (liquidInTip < 0.1) {
-            setStep(WorkflowStep.RUN_GEL);
-         }
+        const drop = (val - prev) * WORKFLOW.EJECT_RATE_PER_PLUNGER_UNIT;
+        setLiquid(Math.max(0, liquidInTip - drop));
+
+        if (activeWellIndex !== null) {
+          addDnaToWell(activeWellIndex, drop);
+        }
+
+        if (liquidInTip < VOLUME.EMPTY_EPS * 2) {
+          setStep(WorkflowStep.RUN_GEL);
+        }
       }
     }
   };
@@ -128,7 +130,7 @@ export function UIOverlay() {
             >
               <div className="flex justify-between items-center mb-4">
                  <span className="text-xs font-mono uppercase tracking-widest text-neutral-500">Plunger</span>
-                 <div className={`w-3 h-3 rounded-full ${plungerPos >= 0.65 && plungerPos <= 0.75 ? 'bg-green-500 shadow-[0_0_10px_#22c55e]' : 'bg-neutral-700'}`} />
+                 <div className={`w-3 h-3 rounded-full ${plungerPos >= PLUNGER.SOFT_STOP - PLUNGER.SOFT_STOP_TOLERANCE && plungerPos <= PLUNGER.SOFT_STOP + PLUNGER.SOFT_STOP_TOLERANCE ? 'bg-green-500 shadow-[0_0_10px_#22c55e]' : 'bg-neutral-700'}`} />
               </div>
               
               {!isLowered && (
