@@ -6,7 +6,7 @@ import { WELLS } from '../scene/targets';
 const GEL_ORIGIN: [number, number, number] = [3, 0, -1];
 
 export function GelBox() {
-  const { isBoxOn, dnaInWells, step } = useStore();
+  const { isBoxOn, dnaInWells, step, activeWellIndex } = useStore();
 
   const wells = useMemo(() => {
     // Convert world-space well positions to local (relative to GEL_ORIGIN).
@@ -35,8 +35,8 @@ export function GelBox() {
       {/* Wells */}
       {wells.map((well) => (
         <group key={well.id} position={[well.x, well.y, well.z]}>
-          {/* Alignment guide */}
-          {step === WorkflowStep.LOAD_WELL && well.id === 0 && (
+          {/* Alignment guide highlights the well the cursor is over. */}
+          {step === WorkflowStep.LOAD_WELL && activeWellIndex === well.id && (
             <mesh position={[0, 1, 0]} rotation={[-Math.PI/2, 0, 0]}>
               <ringGeometry args={[0.35, 0.45, 32]} />
               <meshBasicMaterial color="#38bdf8" transparent opacity={0.5} />

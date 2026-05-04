@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { WORKFLOW } from './sim/config';
+import type { HoverTarget } from './sim/types';
 
 export enum WorkflowStep {
   GET_TIP = 'GET_TIP',
@@ -28,7 +29,12 @@ interface SimulationState {
   isLowered: boolean;
   isNearSample: boolean;
   isNearTips: boolean;
-  
+
+  // Chunk B additions — populated by InteractionDriver from frame loop.
+  pointer: { x: number; z: number } | null;
+  hoverTarget: HoverTarget;
+  loweredDepth: number; // 0..1
+
   // Actions
   setStep: (step: WorkflowStep) => void;
   setPlunger: (pos: number) => void;
@@ -41,6 +47,9 @@ interface SimulationState {
   setIsLowered: (val: boolean) => void;
   setIsNearSample: (val: boolean) => void;
   setIsNearTips: (val: boolean) => void;
+  setPointer: (p: { x: number; z: number } | null) => void;
+  setHoverTarget: (t: HoverTarget) => void;
+  setLoweredDepth: (d: number) => void;
   reset: () => void;
 }
 
@@ -56,6 +65,9 @@ export const useStore = create<SimulationState>((set) => ({
   isLowered: false,
   isNearSample: false,
   isNearTips: false,
+  pointer: null,
+  hoverTarget: null,
+  loweredDepth: 0,
 
   setStep: (step) => set({ step }),
   setPlunger: (plungerPos) => set({ plungerPos }),
@@ -72,6 +84,9 @@ export const useStore = create<SimulationState>((set) => ({
   setIsLowered: (isLowered) => set({ isLowered }),
   setIsNearSample: (isNearSample) => set({ isNearSample }),
   setIsNearTips: (isNearTips) => set({ isNearTips }),
+  setPointer: (pointer) => set({ pointer }),
+  setHoverTarget: (hoverTarget) => set({ hoverTarget }),
+  setLoweredDepth: (loweredDepth) => set({ loweredDepth }),
   reset: () => set({
     step: WorkflowStep.GET_TIP,
     plungerPos: 0,
@@ -84,5 +99,8 @@ export const useStore = create<SimulationState>((set) => ({
     isLowered: false,
     isNearSample: false,
     isNearTips: false,
+    pointer: null,
+    hoverTarget: null,
+    loweredDepth: 0,
   }),
 }));
