@@ -7,12 +7,16 @@ import { LabObjects } from './components/LabObjects';
 import { UIOverlay } from './components/UIOverlay';
 import { CameraRig } from './scene/CameraRig';
 import { Cursor } from './scene/Cursor';
+import { InteractionDriver } from './scene/InteractionDriver';
 import { usePointerWorld } from './scene/usePointerWorld';
 
 function SceneRoot() {
   const pointerRef = usePointerWorld();
   return (
     <>
+      {/* Driver runs first each frame so Pipette reads up-to-date pointer/hover. */}
+      <InteractionDriver pointerRef={pointerRef} />
+
       <ambientLight intensity={0.5} />
       <spotLight position={[10, 15, 10]} angle={0.25} penumbra={1} intensity={1500} castShadow />
       <pointLight position={[-5, 5, -5]} intensity={500} color="#3b82f6" />
