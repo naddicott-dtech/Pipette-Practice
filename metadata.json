@@ -1,0 +1,6 @@
+{
+  "name": "Micropipette & Gel Electrophoresis Sim",
+  "description": "An interactive simulation teaching students how to use a micropipette to load DNA samples into an electrophoresis gel, focusing on soft/hard stops and well loading precision.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
