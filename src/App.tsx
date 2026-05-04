@@ -14,8 +14,11 @@ function SceneRoot() {
   const pointerRef = usePointerWorld();
   return (
     <>
-      {/* Driver runs first each frame so Pipette reads up-to-date pointer/hover. */}
+      {/* Frame ordering: pointer hook → driver writes store → camera/pipette read.
+          CameraRig lives here (not at the Canvas root) so its useFrame registers
+          after usePointerWorld and InteractionDriver. */}
       <InteractionDriver pointerRef={pointerRef} />
+      <CameraRig />
 
       <ambientLight intensity={0.5} />
       <spotLight position={[10, 15, 10]} angle={0.25} penumbra={1} intensity={1500} castShadow />
@@ -40,7 +43,6 @@ export default function App() {
   return (
     <div className="w-full h-screen bg-neutral-900 overflow-hidden font-sans text-white select-none">
       <Canvas shadows gl={{ antialias: true }}>
-        <CameraRig />
         <SceneRoot />
       </Canvas>
 

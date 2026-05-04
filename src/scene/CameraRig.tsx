@@ -5,7 +5,9 @@ import * as THREE from 'three';
 import { CAMERA } from '../sim/config';
 import { useStore } from '../store';
 
-const DAMP = 4; // higher = snappier; tuned by feel
+// Damping rate: ~3 time constants ≈ 95% transition.
+// lambda = 3000 / TRANSITION_MS gives the right feel for a 450 ms preset.
+const DAMP = 3000 / CAMERA.TRANSITION_MS;
 
 const overviewPos = new THREE.Vector3(...CAMERA.OVERVIEW.position);
 const closeupPos = new THREE.Vector3(...CAMERA.CLOSEUP.position);

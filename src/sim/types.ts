@@ -7,6 +7,8 @@ export type HoverTarget =
   | { kind: 'trash' }
   | null;
 
+// FailureCode and WarningCode are the surface for the rules layer added
+// in Chunk C; the store still uses the FailureMode enum until then.
 export type FailureCode =
   | 'NO_TIP'
   | 'PUNCTURE'
