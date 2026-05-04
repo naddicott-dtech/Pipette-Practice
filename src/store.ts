@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import { WORKFLOW } from './sim/config';
 
 export enum WorkflowStep {
   GET_TIP = 'GET_TIP',
@@ -51,7 +50,7 @@ export const useStore = create<SimulationState>((set) => ({
   hasTip: false,
   isBoxOn: false,
   failure: null,
-  dnaInWells: Array(WORKFLOW.WELL_COUNT).fill(0),
+  dnaInWells: [0, 0, 0, 0, 0],
   activeWellIndex: null,
   isLowered: false,
   isNearSample: false,
@@ -79,7 +78,7 @@ export const useStore = create<SimulationState>((set) => ({
     hasTip: false,
     isBoxOn: false,
     failure: null,
-    dnaInWells: Array(WORKFLOW.WELL_COUNT).fill(0),
+    dnaInWells: [0, 0, 0, 0, 0],
     activeWellIndex: null,
     isLowered: false,
     isNearSample: false,

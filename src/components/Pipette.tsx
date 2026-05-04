@@ -3,8 +3,6 @@ import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useStore, WorkflowStep, FailureMode } from '../store';
 import { Float, Html } from '@react-three/drei';
-import { PIPETTE, VOLUME, PLUNGER } from '../sim/config';
-import { TIP_RACK, SAMPLE_TUBES, WELLS } from '../scene/targets';
 
 export function Pipette() {
   const group = useRef<THREE.Group>(null);
@@ -35,20 +33,20 @@ export function Pipette() {
     if (!group.current) return;
     
     // Base height
-    let targetY: number = PIPETTE.Y_HOVER;
-
+    let targetY = 3.5;
+    
     // If lowered, drop it down
     if (isLowered) {
-      if (step === WorkflowStep.INTAKE_SAMPLE) targetY = PIPETTE.Y_LOWERED_SAMPLE;
-      else if (step === WorkflowStep.LOAD_WELL) targetY = PIPETTE.Y_LOWERED_WELL;
-      else targetY = PIPETTE.Y_LOWERED_TIPS;
+      if (step === WorkflowStep.INTAKE_SAMPLE) targetY = 0.8;
+      else if (step === WorkflowStep.LOAD_WELL) targetY = 0.4;
+      else targetY = 0.8; // Default lower for tips
     }
 
     // Smooth follow
     const x = (state.mouse.x * viewport.width) / 1.5;
     const z = -(state.mouse.y * viewport.height) / 1.5;
     
-    group.current.position.lerp(new THREE.Vector3(x, targetY, z), PIPETTE.FOLLOW_LERP);
+    group.current.position.lerp(new THREE.Vector3(x, targetY, z), 0.1);
 
     // Dynamic rotation for more "life"
     group.current.rotation.z = -state.mouse.x * 0.1;
@@ -60,10 +58,10 @@ export function Pipette() {
     if (!group.current || failure !== null) return;
     const pos = group.current.position;
 
-    // TIP RACK
-    const distToTips = Math.abs(pos.x - TIP_RACK.position[0]) + Math.abs(pos.z - TIP_RACK.position[2]);
-    const nearTips = distToTips < TIP_RACK.radius;
-
+    // TIP RACK: -5, 0, 2
+    const distToTips = Math.abs(pos.x - (-5)) + Math.abs(pos.z - 2);
+    const nearTips = distToTips < 1.5;
+    
     // Optimize: Only update state if value actually changed to prevent console spam/renders
     const state = useStore.getState();
     if (state.isNearTips !== nearTips) state.setIsNearTips(nearTips);
@@ -73,13 +71,9 @@ export function Pipette() {
       state.setStep(WorkflowStep.INTAKE_SAMPLE);
     }
 
-    // SAMPLE TUBE — legacy nearest-tube proximity, kept until Chunk B refactor.
-    // Threshold (1.0) preserved verbatim from pre-Chunk-A behavior; Chunk B
-    // generalizes to per-tube proximity using `IndexedTarget.radius`.
-    const sampleTube = SAMPLE_TUBES[0];
-    const LEGACY_SAMPLE_PROXIMITY = 1.0;
-    const distToSample = Math.abs(pos.x - sampleTube.position[0]) + Math.abs(pos.z - sampleTube.position[2]);
-    const nearSample = distToSample < LEGACY_SAMPLE_PROXIMITY;
+    // SAMPLE TUBE: -2, 0, 2
+    const distToSample = Math.abs(pos.x - (-2)) + Math.abs(pos.z - 2);
+    const nearSample = distToSample < 1.0;
     if (state.isNearSample !== nearSample) state.setIsNearSample(nearSample);
 
     // Only check interactions if lowered
@@ -89,27 +83,33 @@ export function Pipette() {
     }
 
     // INTERACTION: Load Well DETECTION
+    const wellBaseX = 3;
+    const wellBaseZ = -1 + 1.5; 
+    const wellsX = [-2.4, -1.2, 0, 1.2, 2.4].map(x => x + wellBaseX);
+    
     let foundWell: number | null = null;
-    WELLS.forEach((well) => {
-      const dx = Math.abs(pos.x - well.position[0]);
-      const dz = Math.abs(pos.z - well.position[2]);
-
-      if (dx < well.radius && dz < well.radius) {
-        foundWell = well.index;
-
+    wellsX.forEach((wellX, i) => {
+      const dx = Math.abs(pos.x - wellX);
+      const dz = Math.abs(pos.z - wellBaseZ);
+      
+      if (dx < 0.6 && dz < 0.6) {
+        foundWell = i;
+        
         if (step === WorkflowStep.LOAD_WELL) {
           // Height checks at loading
-          if (pos.y < PIPETTE.Y_LOWERED_WELL + 0.2) {
-            if (pos.y < PIPETTE.Y_PUNCTURE + 0.05) {
+          if (pos.y < 0.6) {
+            // Check for puncture (Y < -0.05 is bottom of well)
+            if (pos.y < 0.1) {
               setFailure(FailureMode.PUNCTURE);
-            } else if (plungerPos > PLUNGER.HARD_STOP - 0.25 && liquidInTip > 0) {
-              if (liquidInTip < VOLUME.EMPTY_EPS * 2) {
-                setStep(WorkflowStep.RUN_GEL);
-              }
+            } else if (plungerPos > 0.75 && liquidInTip > 0) {
+               // Ejecting inside well!
+               if (liquidInTip < 0.1) {
+                 setStep(WorkflowStep.RUN_GEL);
+               }
             }
-          } else if (plungerPos > PLUNGER.HARD_STOP - 0.25 && liquidInTip > 0) {
-            // Ejecting too high (Overflow)
-            setFailure(FailureMode.OVERFLOW);
+          } else if (plungerPos > 0.75 && liquidInTip > 0) {
+             // Ejecting too high (Overflow)
+             setFailure(FailureMode.OVERFLOW);
           }
         }
       }
@@ -158,7 +158,7 @@ export function Pipette() {
       {/* Visual Indicator of current Volume */}
       <Html position={[0.5, 0, 0]}>
         <div className="bg-black/50 px-2 py-1 rounded text-[10px] whitespace-nowrap">
-           {liquidInTip > 0 ? `${(liquidInTip * VOLUME.MAX_UL).toFixed(1)} μL` : 'Empty'}
+           {liquidInTip > 0 ? `${(liquidInTip * 20).toFixed(1)} μL` : 'Empty'}
         </div>
       </Html>
     </group>

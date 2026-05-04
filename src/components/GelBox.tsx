@@ -1,25 +1,19 @@
 import React, { useMemo, useEffect, useState } from 'react';
 import { useStore, WorkflowStep } from '../store';
 import { Text } from '@react-three/drei';
-import { WELLS } from '../scene/targets';
-
-const GEL_ORIGIN: [number, number, number] = [3, 0, -1];
 
 export function GelBox() {
   const { isBoxOn, dnaInWells, step } = useStore();
 
   const wells = useMemo(() => {
-    // Convert world-space well positions to local (relative to GEL_ORIGIN).
-    return WELLS.map((w) => ({
-      x: w.position[0] - GEL_ORIGIN[0],
-      y: w.position[1] - GEL_ORIGIN[1],
-      z: w.position[2] - GEL_ORIGIN[2],
-      id: w.index,
+    return Array.from({ length: 5 }).map((_, i) => ({
+      x: (i - 2) * 1.2,
+      id: i
     }));
   }, []);
 
   return (
-    <group position={GEL_ORIGIN}>
+    <group position={[3, 0, -1]}>
       {/* Buffer Chamber */}
       <mesh castShadow receiveShadow>
         <boxGeometry args={[8, 0.5, 6]} />
@@ -34,7 +28,7 @@ export function GelBox() {
 
       {/* Wells */}
       {wells.map((well) => (
-        <group key={well.id} position={[well.x, well.y, well.z]}>
+        <group key={well.id} position={[well.x, 0.05, 1.5]}>
           {/* Alignment guide */}
           {step === WorkflowStep.LOAD_WELL && well.id === 0 && (
             <mesh position={[0, 1, 0]} rotation={[-Math.PI/2, 0, 0]}>
