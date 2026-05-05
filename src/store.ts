@@ -74,8 +74,7 @@ interface SimulationState {
   setPlungerCurve: (curve: PlungerCurve) => void;
   /**
    * Apply a `Result.nextState` patch from a rules.ts function. RuleState
-   * keys map 1:1 to store keys (after C3, the legacy `ruleFailure` ↔
-   * `failure` translation is gone — they're the same field now).
+   * keys map 1:1 to store keys.
    */
   applyRulePatch: (patch: Partial<RuleState>) => void;
   setActiveWellIndex: (index: number | null) => void;

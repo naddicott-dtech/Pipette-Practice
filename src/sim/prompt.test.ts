@@ -109,5 +109,51 @@ describe('resolvePrompt — non-free phases', () => {
     expect(r.text).toBe('');
     expect(r.tone).toBe('silent');
   });
+
+  it('locked GET_TIP tells the user to hold for pickup', () => {
+    const r = resolvePrompt(
+      input({ step: WorkflowStep.GET_TIP, interactionPhase: 'locked' }),
+    );
+    expect(r.text).toMatch(/hold space/i);
+    expect(r.text).toMatch(/tip/i);
+  });
+
+  it('locked DISCARD_TIP tells the user to hold for discard', () => {
+    const r = resolvePrompt(
+      input({ step: WorkflowStep.DISCARD_TIP, interactionPhase: 'locked' }),
+    );
+    expect(r.text).toMatch(/hold space/i);
+    expect(r.text).toMatch(/discard/i);
+  });
+
+  it('acting LOAD_WELL tells the user to press past the click', () => {
+    const r = resolvePrompt(
+      input({ step: WorkflowStep.LOAD_WELL, interactionPhase: 'acting' }),
+    );
+    expect(r.text).toMatch(/dispens/i);
+    expect(r.detail).toMatch(/past the click/i);
+    expect(r.tone).toBe('progress');
+  });
+
+  it('acting GET_TIP and DISCARD_TIP show a generic "Pressing…"', () => {
+    expect(
+      resolvePrompt(input({ step: WorkflowStep.GET_TIP, interactionPhase: 'acting' })).text,
+    ).toMatch(/pressing/i);
+    expect(
+      resolvePrompt(input({ step: WorkflowStep.DISCARD_TIP, interactionPhase: 'acting' })).text,
+    ).toMatch(/pressing/i);
+  });
+
+  it('LOAD_WELL pointing at the active well has no warning detail', () => {
+    const r = resolvePrompt(
+      input({
+        step: WorkflowStep.LOAD_WELL,
+        hoverTarget: { kind: 'well', index: 2 },
+        activeStep: 2,
+      }),
+    );
+    expect(r.text).toMatch(/Well 3/);
+    expect(r.detail).toBeUndefined();
+  });
 });
 

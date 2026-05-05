@@ -18,18 +18,10 @@ describe('config invariants', () => {
     expect(VOLUME.MAX_UL).toBeGreaterThan(0);
   });
 
-  it('puncture height is below well-lowered height', () => {
-    expect(PIPETTE.Y_PUNCTURE).toBeLessThan(PIPETTE.Y_LOWERED_WELL);
-  });
-
   it('lowered heights are below hover height', () => {
     expect(PIPETTE.Y_LOWERED_WELL).toBeLessThan(PIPETTE.Y_HOVER);
     expect(PIPETTE.Y_LOWERED_TIPS).toBeLessThan(PIPETTE.Y_HOVER);
     expect(PIPETTE.Y_LOWERED_SAMPLE).toBeLessThan(PIPETTE.Y_HOVER);
-  });
-
-  it('hold timings are ordered FULL < PUNCTURE', () => {
-    expect(PIPETTE.LOWER_HOLD_FULL_MS).toBeLessThan(PIPETTE.LOWER_HOLD_PUNCTURE_MS);
   });
 
   it('follow lerp is in (0, 1]', () => {

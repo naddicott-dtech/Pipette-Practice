@@ -26,10 +26,7 @@ export const PIPETTE = {
   Y_LOWERED_TIPS: 0.8,
   Y_LOWERED_SAMPLE: 0.8,
   Y_LOWERED_WELL: 0.4,
-  Y_PUNCTURE: 0.05,
   FOLLOW_LERP: 0.1,
-  LOWER_HOLD_FULL_MS: 300,
-  LOWER_HOLD_PUNCTURE_MS: 600,
 } as const;
 
 export const WORKFLOW = {

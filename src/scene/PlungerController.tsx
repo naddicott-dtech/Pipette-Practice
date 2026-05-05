@@ -66,12 +66,16 @@ export function PlungerController() {
       }
     }
     function onMouseDown(e: MouseEvent) {
-      // Skip clicks landing on interactive UI elements (modal buttons,
-      // future PlungerHUD button, etc.). Prompt is pointer-events-none
-      // so it wouldn't receive mousedown anyway.
+      // Click commits a lock from `free`. The plunger press is Space-only
+      // for now — mouse-down ignored when already locked because there's
+      // no symmetric mouse-up wired to release. (Adding a dedicated
+      // "hold to draw" button in PlungerHUD with matched onMouseDown /
+      // onMouseUp handlers is a future improvement; canvas-wide
+      // mouse-down for the press would let the user start a press they
+      // can't release.)
       const target = e.target as HTMLElement | null;
       if (target?.closest('button, input, [role="button"]')) return;
-      commitOrPress();
+      if (useStore.getState().interactionPhase === 'free') commitOrPress();
     }
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);

@@ -5,13 +5,10 @@ import { useStore } from '../store';
 import { FAILURE_COPY } from '../sim/failures';
 
 /**
- * Renders the per-mode failure modal driven by `state.ruleFailure` (the
- * new failure code from rules.ts). Reads copy from `FAILURE_COPY`. The
- * "Try Again" button calls `reset()` which clears `ruleFailure` and
+ * Renders the per-mode failure modal. Reads `state.failure` (a
+ * `FailureCode | null`) and the matching `FAILURE_COPY` entry. The
+ * "Try Again" button calls `reset()` which clears the failure and
  * returns to the initial state.
- *
- * The legacy `state.failure` enum is no longer rendered — C3 replaces
- * the legacy modal entirely. UIOverlay no longer reads it.
  */
 export function FailureModal() {
   const failure = useStore((s) => s.failure);
