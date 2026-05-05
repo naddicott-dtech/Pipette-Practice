@@ -1,8 +1,21 @@
 name: Deploy to GitHub Pages
 
+# Deploy any branch's commits that actually touch the app. With no live
+# users, fast iteration > release discipline — feature branches deploy
+# their state to the single Pages slot, last push wins. Coordinate
+# manually when multiple branches are active.
+#
+# Doc-only and CI-config-only commits don't deploy (path filter below).
 on:
   push:
-    branches: [main]
+    paths:
+      - 'src/**'
+      - 'index.html'
+      - 'vite.config.ts'
+      - 'tsconfig.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/deploy.yml'
   workflow_dispatch:
 
 permissions:
@@ -10,11 +23,11 @@ permissions:
   pages: write
   id-token: write
 
-# Allow one concurrent deploy; don't cancel in-progress runs so we don't
-# leave Pages in a broken state mid-deploy.
+# Single deploy slot. Cancel in-progress runs so a newer push from
+# any branch supersedes an older deploy mid-flight, instead of waiting.
 concurrency:
   group: pages
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build:

@@ -41,17 +41,26 @@ warning is recorded in `state.warnings[]` and surfaces in the
 end-of-run debrief. Failures, by contrast, halt the workflow and
 require `reset()` via the failure modal's "Try Again" button.
 
-**Release gating.** Chunk C is **one release**, not six. C1–C5 are
-internal increments that live on a long-lived `claude/chunk-c` feature
-branch. They are never merged to `main` individually because every
-push to `main` auto-deploys to GitHub Pages, and the intermediate
-states (e.g. C3's single-well-only state) are not playable as a
-production release. Only **C6 closes the branch via a single PR to
-`main`**. CI runs against the feature branch each commit so we keep
-the lights green; the production deploy only updates once at the end.
-This decision is what the original Chunk C acceptance language
-("nothing deferred inside C's surface") was reaching for; this entry
-makes the mechanism concrete.
+**Release gating (revised 2026-05-05, supersedes prior entry in this
+section).** With no live users, the deploy workflow now triggers on
+**any branch's push** that touches app files (see
+`.github/workflows/deploy.yml` path filter). Each Chunk C commit is
+testable on the live URL the moment it lands, regardless of branch.
+This replaces the earlier "long-lived feature branch + single C6
+merge" plan with **deploy-as-we-go**.
+
+What this means in practice:
+
+- C1..C6 each become their own short-lived branch + PR. Merge order
+  matters (later commits depend on earlier types/fields), but each PR
+  goes through normal review and lands on `main` when ready.
+- Each merge auto-deploys. The QA tester and product owner can verify
+  every increment immediately — fast feedback, no "big-bang" final.
+- "Production-ready by end of C" still applies as a milestone (C6 is
+  the last increment), but is no longer mechanically enforced by
+  withholding deploys.
+- Concurrent feature branches share one Pages slot, last push wins.
+  Coordinate manually if multiple Chunk C commits are in flight.
 
 **Property-test scope.** The originally-proposed termination property
 ("any sequence of valid input events terminates in `RUN_GEL` /
@@ -663,13 +672,15 @@ four samples in sequence, then run the gel.
 
 ### Acceptance criteria
 
-**Release-level (gates the merge of `claude/chunk-c` to `main`)**
+**Milestone-level (what "Chunk C done" means)**
 
-- **Production-ready when the branch closes.** C is a single release
-  to `main`, not six. C1–C5 live on the long-lived `claude/chunk-c`
-  feature branch and never auto-deploy in their intermediate states.
-  Only the final merge of C6 (which by then contains all of C1–C5)
-  produces a Pages deploy. See Decision Log → Release gating.
+C is considered done when the live deploy at
+`https://naddicott-dtech.github.io/Pipette-Practice/` satisfies all
+of the following — regardless of how many merges it took to get
+there. Per the revised release-gating entry in the Decision Log,
+each Chunk C PR auto-deploys; this list describes the *destination*,
+not a single gating PR.
+
 - All **six** active failure/warning modes per the canonical taxonomy
   (Decision Log) reachable from real input.
 - Multi-well loop works: four samples, four wells, fresh-tip
@@ -688,17 +699,25 @@ four samples in sequence, then run the gel.
 - Lint clean, `npm run build` clean, `npm test` covers every rule
   path. All existing tests pass.
 
-**Per-commit (what each internal increment must satisfy on the
-feature branch)**
+**Per-merge (what each Chunk C PR must satisfy before merging to
+`main` — and consequently auto-deploying to Pages)**
 
-- Each of C1..C6 leaves the feature branch lint-clean, build-clean,
-  and tests-green. CI runs on the feature branch, not just on `main`.
-- C1, C2 introduce no observable behavior change in the running app.
-- C3 is allowed to be single-well in its observable behavior
-  (multi-well lands in C4) — *because it never reaches `main`
-  on its own*. The release gate above is what makes this OK.
-- C4, C5, C6 are each cumulatively closer to release-ready, but only
-  the C6 merge is the deployable artifact.
+- Lint-clean, build-clean, all tests green.
+- The merged `main` is *playable*, even if some features are not yet
+  in. "Playable" means: no crashes; the existing happy path the
+  player could complete before the merge still completes; new
+  features are scoped behind the workflow step that drives them
+  (e.g. C3's lock-and-act becomes the new mechanic, but with C4
+  unmerged the loop still terminates after one well — broken
+  vs. design, not broken vs. crash).
+- C1, C2 are observable no-ops in the running app — pure logic and
+  store fields with default values.
+- C3 lands the new mechanic; the live build becomes single-well
+  lock-and-act until C4 merges. This is *acceptable* because there
+  are no live users; it's how the QA tester gets to test C3 in
+  isolation.
+- C4, C5, C6 each strictly improve the live build toward the
+  milestone-level acceptance above.
 
 ### Architecture
 
@@ -775,7 +794,10 @@ have **zero** legacy fields by the end of C4.
 | `src/sim/plunger.test.ts` | Boundary tests for the plunger curve |
 | `src/sim/rules.test.ts` | Already scaffolded (PR #6); replace `it.todo` with real tests |
 | `src/scene/PlungerController.tsx` | Captures Space-hold + click-hold, writes `plungerCurve` to store |
-| `src/scene/TrashBin.tsx` | Visible mesh at `TRASH.position`; hover handled via existing target |
+| `src/scene/Table.tsx` | The lab bench mesh. Split out of `LabObjects.tsx` in C3. |
+| `src/scene/TipRack.tsx` | Tip rack mesh + glow ring + tip placeholders. Split out in C3. |
+| `src/scene/SampleTubeRack.tsx` | Four sample tubes + per-tube live-hover ring + `activeStep` highlight + ghosting. Split out in C3, gains highlight logic in C4. |
+| `src/scene/TrashBin.tsx` | Visible mesh at `TRASH.position`; hover handled via existing target. Added in C5. |
 | `src/ui/Prompt.tsx` | The "Click or press Space to..." overlay |
 | `src/ui/PlungerHUD.tsx` | Replaces the rotated slider; live readout of plunger depth, soft-stop indicator |
 | `src/ui/FailureModal.tsx` | Extracted from UIOverlay, reads `FAILURE_COPY` |
@@ -791,7 +813,7 @@ have **zero** legacy fields by the end of C4.
 | `src/scene/InteractionDriver.tsx` | Becomes thinner — only handles lock/cancel transitions. Plunger logic moves to `PlungerController`. PUNCTURE wiring removed. |
 | `src/components/Pipette.tsx` | Position lerps to `lockedTarget` when `interactionPhase !== 'free'`; otherwise follows pointer. Plunger animation reads `plungerCurve.currentDepth`. |
 | `src/components/UIOverlay.tsx` | Loses the rotated slider entirely. Renders `<Prompt>`, `<PlungerHUD>`, `<FailureModal>`, `<Debrief>`. Volume readout moves to bottom HUD. |
-| `src/components/LabObjects.tsx` | Active sample tube ring tracks `activeStep`; used tubes ghost out (lower opacity + dashed outline). Adds `<TrashBin>`. |
+| `src/components/LabObjects.tsx` | **Replaced** in C3 by per-object files for separation of concerns: `Table.tsx`, `TipRack.tsx`, `SampleTubeRack.tsx` (tubes + per-tube highlighting), and `TrashBin.tsx` (added in C5). The current bucket-component grows to ~200 lines with four logical regions if left whole; splitting now is cheaper than splitting later. |
 | `src/components/GelBox.tsx` | `Band` migrates via `useFrame` reading `runStartedAt`; lane verdicts (`clean`/`faint`/`muddled`/`missing`) drive band color/intensity. |
 | `src/sim/types.ts` | Add `FailureCode = 'NO_TIP' \| 'HARD_STOP_TO_DRAW' \| 'EMPTY_EJECT'`; `WarningCode = 'SOFT_STOP_TO_EJECT' \| 'NO_FRESH_TIP' \| 'WRONG_TUBE'`; remove `PUNCTURE` / `NOT_LOW_ENOUGH`. |
 | `src/sim/depth.ts` | Deleted. The hold-to-lower depth ramp was a Chunk B mechanic the redesign replaces. |
@@ -1050,27 +1072,19 @@ commit since they touch the same JSX block.
 
 ### Step-by-step execution (proposed PR sequencing)
 
-Six commits, each leaves the feature branch lint/test/build green.
-The commits land on a long-lived `claude/chunk-c` branch (see
-Decision Log → Release gating); CI runs against the branch each
-commit, but **none of C1..C5 ships to `main` individually**. The
-final C6 PR closes the branch into `main` as a single deployable
-release. This avoids deploying intermediate states (e.g. C3's
-single-well-only build) to GitHub Pages.
+Six commits, each its own short-lived branch + PR to `main`. Each PR
+must leave `main` green (lint, tests, build) and *playable* per the
+per-merge acceptance criteria above. Auto-deploy fires on every
+merge that touches app paths.
 
-If review-by-PR is preferred during development, each internal
-commit can be opened as a *draft PR against the feature branch*
-(not against `main`) for review-of-record without triggering
-deploy. Only the final PR targets `main`.
-
-| # | Commit | Adds / changes | Behavior change? |
+| # | Commit | Adds / changes | State of live build after merge |
 |---|---|---|---|
-| C1 | Pure rules + plunger + failures + tests | `rules.ts`, `plunger.ts`, `failures.ts`, all `.test.ts`. Replace all `it.todo`s in `rules.test.ts`. | None — pure logic, not yet wired. |
-| C2 | Store + state-machine refactor | Adds new fields, removes old. `interactionPhase`, `lockedTarget`, `activeStep`, `plungerCurve`, `warnings`, `runStartedAt`. Reset/init paths updated. | None visible — driver still uses old API; new fields default to "free". |
-| C3 | Lock-and-act input + camera | `PlungerController`, `Prompt`, `PlungerHUD`, new `ACTION` camera preset. Slider gone. `InteractionDriver` rewritten to commit/cancel only. PUNCTURE / depth code deleted. | Major — playable with new mechanic. Single-well still. |
-| C4 | Multi-well loop + active highlights | `activeStep` consumed by `LabObjects` and `GelBox`. Tubes ghost, rings track. `WRONG_TUBE` and `NO_FRESH_TIP` warnings fire. | Multi-well sequential workflow works. |
-| C5 | Trash + discard step | `TrashBin` mesh; `DISCARD_TIP` step in workflow. | Closes the loop. |
-| C6 | RUN animation + Debrief + visual fidelity | `Band` via `useFrame`; `runStartedAt`; `Debrief` modal; warnings → verdicts. Pipette tip geometry corrections (matches shaft diameter; liquid mesh oriented apex-down). README/title cleanup. | Production-ready end-to-end. |
+| C1 | Pure rules + plunger + failures + tests | `rules.ts`, `plunger.ts`, `failures.ts`, all `.test.ts`. Replace all `it.todo`s in `rules.test.ts`. | No-op — pure logic not yet wired. (Path-filtered: doc + test-only changes won't deploy. C1 *will* deploy because it adds new `src/` files.) |
+| C2 | Store + state-machine refactor | Adds new fields (`interactionPhase`, `lockedTarget`, `activeStep`, `plungerCurve`, `warnings`, `runStartedAt`). Removes legacy `isLowered`. Reset/init paths updated. | No visible change — driver still uses pre-C3 mechanic; new fields default to "free" + 0. |
+| C3 | Lock-and-act input + camera + LabObjects split | `PlungerController`, `Prompt`, `PlungerHUD`, `ACTION` camera preset. Rotated slider gone. `InteractionDriver` rewritten to commit/cancel only. `PUNCTURE`/depth code deleted. **Splits `LabObjects.tsx` into `Table.tsx`, `TipRack.tsx`, `SampleTubeRack.tsx` for maintainability.** Audio click via `src/audio/click.ts`. | Playable with new mechanic. Single-well only — C4 closes the loop. |
+| C4 | Multi-well loop + active highlights + live-hover ring | `activeStep` consumed by `SampleTubeRack` and `GelBox`. Tubes ghost. Two ring styles per target: active (driven by `activeStep`) + live-hover (driven by `findHover`). `WRONG_TUBE` and `NO_FRESH_TIP` warnings fire. | Multi-well sequential workflow works. Run still terminates pre-debrief. |
+| C5 | Trash + discard step | `TrashBin.tsx` mesh; `DISCARD_TIP` step in workflow. | Full cycle closes: pickup → draw → load → discard → next. Bands appear post-run but no formal debrief yet. |
+| C6 | RUN animation + Debrief + visual fidelity | `Band` via `useFrame` (no more `setInterval`); `runStartedAt`; `Debrief` modal; warnings → verdicts. Pipette tip geometry (matches shaft diameter; liquid mesh oriented apex-down). README/title cleanup. | Production-ready milestone reached. |
 
 ### Tests required
 
