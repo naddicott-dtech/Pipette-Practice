@@ -36,6 +36,11 @@ export const WORKFLOW = {
   WELL_COUNT: 4,
   WELL_SUCCESS_THRESHOLD: 0.5,
   EJECT_RATE_PER_PLUNGER_UNIT: 2,
+  /**
+   * How long the "finishing" animation plays after a rule fires before
+   * the workflow advances to the next step. Visual feedback window.
+   */
+  FINISHING_ANIMATION_MS: 500,
 } as const;
 
 export const LOCK = {

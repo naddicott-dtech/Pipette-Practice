@@ -77,7 +77,6 @@ function expectedKindForStep(step: WorkflowStep): HoverKind | null {
   switch (step) {
     case WorkflowStep.GET_TIP:
       return 'tip-rack';
-    case WorkflowStep.INTAKE_SAMPLE:
     case WorkflowStep.DRAW_SAMPLE:
       return 'sample';
     case WorkflowStep.LOAD_WELL:
@@ -109,10 +108,7 @@ export function tryLockOnto(state: RuleState, hover: HoverTarget): Result {
   if (expected === null || hover.kind !== expected) return NOOP;
 
   // Lock-time failure: drawing without a tip.
-  if (
-    (state.step === WorkflowStep.DRAW_SAMPLE || state.step === WorkflowStep.INTAKE_SAMPLE) &&
-    !state.hasTip
-  ) {
+  if (state.step === WorkflowStep.DRAW_SAMPLE && !state.hasTip) {
     return {
       nextState: {
         failure: 'NO_TIP',
@@ -161,7 +157,6 @@ function actionForStep(step: WorkflowStep): PlungerAction | null {
   switch (step) {
     case WorkflowStep.GET_TIP:
       return 'pickup';
-    case WorkflowStep.INTAKE_SAMPLE:
     case WorkflowStep.DRAW_SAMPLE:
       return 'draw';
     case WorkflowStep.LOAD_WELL:
@@ -399,7 +394,6 @@ function nextStepWithinCycle(step: WorkflowStep): WorkflowStep | null {
   switch (step) {
     case WorkflowStep.GET_TIP:
       return WorkflowStep.DRAW_SAMPLE;
-    case WorkflowStep.INTAKE_SAMPLE:
     case WorkflowStep.DRAW_SAMPLE:
       return WorkflowStep.LOAD_WELL;
     case WorkflowStep.LOAD_WELL:

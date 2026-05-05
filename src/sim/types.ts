@@ -27,16 +27,10 @@ export type InteractionPhase = 'free' | 'committing' | 'locked' | 'acting' | 'fi
 
 /**
  * Outer workflow step. Canonical home as of Chunk C; `store.ts`
- * re-exports for backward compat through C2's store refactor.
- *
- * `INTAKE_SAMPLE` is retained as a deprecated alias for `DRAW_SAMPLE`
- * during C1/C2 to avoid breaking the existing `InteractionDriver`
- * wiring before C3 rewrites it. Removed in C3.
+ * re-exports for backward compat.
  */
 export enum WorkflowStep {
   GET_TIP = 'GET_TIP',
-  /** @deprecated alias for `DRAW_SAMPLE`; removed in C3. */
-  INTAKE_SAMPLE = 'INTAKE_SAMPLE',
   DRAW_SAMPLE = 'DRAW_SAMPLE',
   LOAD_WELL = 'LOAD_WELL',
   DISCARD_TIP = 'DISCARD_TIP',
