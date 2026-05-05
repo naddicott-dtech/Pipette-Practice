@@ -25,8 +25,8 @@ export const FAILURE_COPY: Record<FailureCode | WarningCode, FailureCopy> = {
   },
   HARD_STOP_TO_DRAW: {
     title: 'Drew past the soft stop',
-    body: "Pressing past the soft stop while drawing pushes air into the sample. Stop at the click — you'll feel and hear it.",
-    hint: "Hold Space until you hear the click, then release. Don't keep pressing.",
+    body: "Pressing past the soft stop while drawing displaces extra air. On release, you take up WAY more sample than intended — and DNA reagent is not cheap. In a real lab this is an expensive mistake.",
+    hint: "Hold Space until you feel and hear the click, then let go. Once you hit the click, stop pressing.",
   },
   EMPTY_EJECT: {
     title: 'Ejected with an empty tip',
@@ -44,9 +44,9 @@ export const FAILURE_COPY: Record<FailureCode | WarningCode, FailureCopy> = {
     hint: 'After loading a well, discard the tip in the trash before picking up a new one.',
   },
   WRONG_TUBE: {
-    title: 'Drew from the wrong sample',
-    body: 'DNA 1 goes into well 1, DNA 2 into well 2, and so on. The lane you load will be mislabeled.',
-    hint: "Watch the highlighted tube — that's the one matching the next well.",
+    title: 'Lane order changed',
+    body: "You loaded into a position that doesn't match the active step. In a real lab this isn't a failure — but only if you write it down. The convention is sample N → well N; if you deviate, you must document which sample sits in which lane.",
+    hint: 'Good lab practice: take a written note of well contents either way. If you swap the order, that note becomes essential.',
   },
 };
 
