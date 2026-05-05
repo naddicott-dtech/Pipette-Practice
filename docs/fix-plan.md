@@ -545,79 +545,383 @@ from `Pipette.tsx`, ~30 LoC edited in `App.tsx` / `UIOverlay.tsx` /
 
 ---
 
-## Chunk C — Centralize workflow rules
+## Chunk C — "Lock-and-act" production redesign
 
-**Why third:** with B's clean inputs, we can collapse logic that today
-lives in three places (`Pipette.tsx`, `UIOverlay.tsx`, sometimes the
-store). This is where the failure pedagogy gets implemented properly.
+**Why this is bigger than the old C plan.** The QA pass on the
+post-Chunk-B Pages deploy
+([`docs/qa-notes/2026-05-05.md`](qa-notes/2026-05-05.md)) plus the
+product owner's playthrough independently arrived at the same
+conclusion: the current "hold Space + drag a rotated slider + keep a
+moving cursor on a 30 px target" input model is too combinatorial for
+3–5 minutes of HS-student onboarding. Three of the failures the sim
+is built to teach are functionally unreachable. Multi-well loading is
+unimplemented. The plunger UI vanishes the moment the player presses
+Space. We are replacing the input model.
 
-**Outline**
+**What we keep.** The soft-stop / hard-stop pedagogy. A real
+micropipette has two distinct plunger detents and the difference
+between them is the technique we are teaching. The QA report's
+Alternative C ("drop the soft-stop concept entirely") is
+*explicitly rejected* by the product owner. The redesign must make
+soft vs. hard *easier to feel*, not eliminate it.
 
-- New `src/sim/rules.ts` exports pure, fully-typed functions:
-  - `tryPickUpTip(state, hover, lowered) → Result`
-  - `tryDrawSample(state, hover, plungerPath) → Result`
-  - `tryEjectIntoWell(state, hover, plungerPath, depth) → Result`
-  - `tryDiscardTip(state, hover, lowered) → Result`
-  - Each `Result = { nextState, events: Array<Event> }` where
-    `Event = { kind: 'STEP_ADVANCED' | 'FAIL' | 'WARN'; code? }`.
-- `plungerPath` is a small ring buffer of recent plunger positions so
-  rules can detect "went past hard stop while drawing" (failure D) and
-  "stopped at soft stop while ejecting" (failure E).
-- Components call rules; they do not encode them.
-- Workflow state machine becomes explicit:
-  - `GET_TIP → DRAW_SAMPLE(n) → LOAD_WELL(n) → DISCARD_TIP → if n<4: GET_TIP else RUN_GEL`.
-- Failures and warnings render with specific copy mapped from the code.
+**The redesign in one paragraph.** Player moves the cursor freely in
+OVERVIEW. When the cursor enters a valid hover zone for the current
+step, an on-screen prompt appears: *"Click or press Space to begin
+[Pick Up Tip / Draw Sample / Load Well / Discard Tip]."* When the
+player clicks or presses Space, the pipette anchors at the target,
+the camera transitions to an ACTION view (a near-side angle on the
+locked pipette + target, ~5° isometric tilt), and a contextual
+plunger control appears above the pipette. The plunger is operated by
+holding Space (or click-and-hold the on-screen depressor): the plunger
+visibly depresses with a perceptible "click" at the soft stop (visual
+notch + audio cue + pacing pause). For *Draw*, releasing at the click
+is success; pushing past it is `HARD_STOP_TO_DRAW`. For *Dispense*,
+releasing at the click is `SOFT_STOP_TO_EJECT` (warning, partial
+delivery, faint band); pushing past it is success. After the action
+animates to completion, the camera returns to OVERVIEW, the workflow
+advances, and the next prompt appears. Players load four wells from
+four samples in sequence, then run the gel.
 
-**Failure mode wiring (the point of the sim)**
+### Acceptance criteria
 
-| Code               | Trigger                                                              | Outcome              |
+- **Production-ready**, not MVP. Limited scope but feature-complete.
+  No "stubbed" or "deferred to D" interactions inside C's surface.
+- All six failure/warning modes reachable from real input:
+  `NO_TIP`, `HARD_STOP_TO_DRAW`, `SOFT_STOP_TO_EJECT`, `EMPTY_EJECT`,
+  `NO_FRESH_TIP`, `WRONG_TUBE`. (`PUNCTURE` and `NOT_LOW_ENOUGH` are
+  *removed* — they were depth-mechanic artifacts that the new input
+  model can't produce.)
+- Multi-well loop works: four samples, four wells, fresh-tip discipline,
+  ending in a gel run with four lanes.
+- Soft-stop pedagogy preserved and *teachable*: visible click + audio
+  cue + brief pacing resistance at 70% plunger depth. Players can
+  feel the difference between "stop at the click" and "push through".
+- Trash bin is a visible mesh, hover-targetable, and consumes
+  `tryDiscardTip`.
+- All controls are mouse-only OR mouse-and-Space — no rotated sliders,
+  no float-equality gates.
+- Failure modal copy is per-mode (title + body + optional hint), not
+  one generic header.
+- Bands separate over a real time window during `RUN_GEL`; `setInterval`
+  is gone.
+- Lint clean. `npm test` covers every rule path. Existing tests pass.
+
+### Architecture
+
+```
+input    →  PointerWorld (free cursor) | KeyHold + Click (commit + plunger)
+sim      →  rules.ts (pure)
+            - tryLockOnto(state, hover) → Result
+            - tryAct(state, lockedTarget, plungerCurve) → Result
+            - tryCancel(state) → Result
+            - reset / tick
+            failures.ts (pure copy map)
+            plunger.ts (pure: hold ms → plunger depth + soft-stop pass count)
+state    →  store (thin):
+            interactionPhase: 'free' | 'committing' | 'locked' | 'acting' | 'finishing'
+            lockedTarget: HoverTarget
+            activeStep: 0..3 (which sample/well pair is current)
+            plungerCurve: { startMs, currentMs, peakDepth, crossedSoftStop: boolean }
+            failure: FailureCode | null
+            warnings: WarningCode[] (for end-of-run debrief)
+scene    →  CameraRig (3 presets now: OVERVIEW / ACTION / RUN)
+            InteractionDriver (lock / cancel transitions; no rules)
+            PlungerController (hold-and-release; emits plungerCurve to store)
+            Cursor / Pipette / LabObjects / GelBox / TrashBin
+ui       →  UIOverlay (prompts, plunger HUD, failure modal, debrief)
+```
+
+**Crucial split:** rules are pure functions on `(state, input) → Result`.
+The driver / controllers only translate user input into rule calls.
+This is what `src/sim/rules.test.ts` was scaffolded for in PR #6.
+
+### Files to add
+
+| Path | Purpose |
+|---|---|
+| `src/sim/rules.ts` | Pure rule functions, `Result = { nextState, events }` |
+| `src/sim/plunger.ts` | `plungerDepthFromHoldMs(ms, profile)` and `plungerOutcome(curve, action) → 'soft' \| 'hard' \| 'aborted'` |
+| `src/sim/failures.ts` | `FAILURE_COPY: Record<FailureCode, { title, body, hint? }>` |
+| `src/sim/plunger.test.ts` | Boundary tests for the plunger curve |
+| `src/sim/rules.test.ts` | Already scaffolded (PR #6); replace `it.todo` with real tests |
+| `src/scene/PlungerController.tsx` | Captures Space-hold + click-hold, writes `plungerCurve` to store |
+| `src/scene/TrashBin.tsx` | Visible mesh at `TRASH.position`; hover handled via existing target |
+| `src/ui/Prompt.tsx` | The "Click or press Space to..." overlay |
+| `src/ui/PlungerHUD.tsx` | Replaces the rotated slider; live readout of plunger depth, soft-stop indicator |
+| `src/ui/FailureModal.tsx` | Extracted from UIOverlay, reads `FAILURE_COPY` |
+| `src/ui/Debrief.tsx` | End-of-run lane-by-lane verdict (clean / faint / muddled / missing) |
+| `src/audio/click.ts` | Tiny WebAudio helper for the soft-stop click (no asset file; synthesized) |
+
+### Files to modify
+
+| Path | Change |
+|---|---|
+| `src/store.ts` | Add `interactionPhase`, `lockedTarget`, `activeStep`, `plungerCurve`, `warnings`, `runStartedAt`. Remove `isLowered`, `loweredDepth`, `plungerPos` (replaced). |
+| `src/scene/CameraRig.tsx` | Add `ACTION` and `RUN` presets; transition based on `interactionPhase` not `loweredDepth`. |
+| `src/scene/InteractionDriver.tsx` | Becomes thinner — only handles lock/cancel transitions. Plunger logic moves to `PlungerController`. PUNCTURE wiring removed. |
+| `src/components/Pipette.tsx` | Position lerps to `lockedTarget` when `interactionPhase !== 'free'`; otherwise follows pointer. Plunger animation reads `plungerCurve.currentDepth`. |
+| `src/components/UIOverlay.tsx` | Loses the rotated slider entirely. Renders `<Prompt>`, `<PlungerHUD>`, `<FailureModal>`, `<Debrief>`. Volume readout moves to bottom HUD. |
+| `src/components/LabObjects.tsx` | Active sample tube ring tracks `activeStep`; used tubes ghost out (lower opacity + dashed outline). Adds `<TrashBin>`. |
+| `src/components/GelBox.tsx` | `Band` migrates via `useFrame` reading `runStartedAt`; lane verdicts (`clean`/`faint`/`muddled`/`missing`) drive band color/intensity. |
+| `src/sim/types.ts` | Add `FailureCode = 'NO_TIP' \| 'HARD_STOP_TO_DRAW' \| 'EMPTY_EJECT'`; `WarningCode = 'SOFT_STOP_TO_EJECT' \| 'NO_FRESH_TIP' \| 'WRONG_TUBE'`; remove `PUNCTURE` / `NOT_LOW_ENOUGH`. |
+| `src/sim/depth.ts` | Deleted. The hold-to-lower depth ramp was a Chunk B mechanic the redesign replaces. |
+| `src/sim/config.ts` | Add `LOCK = { COMMIT_HOLD_MS: 0 }` (commit is instant on click/Space — no auto-lock). Add `PLUNGER.HOLD_TO_SOFT_MS: 600`, `PLUNGER.HOLD_TO_HARD_MS: 1100`, `PLUNGER.SOFT_STOP_RESISTANCE_MS: 150` (pacing pause). Remove `LOWER_HOLD_*`. |
+
+### State machine (the authoritative source going forward)
+
+```
+       cursor moves freely; pipette follows pointer
+                            │
+        cursor enters valid hover zone for current step
+                            │
+                  ┌─────────▼─────────┐
+                  │ interactionPhase  │
+                  │ = 'free'          │
+                  └─────────┬─────────┘
+                            │ (Click OR Space-press)
+                            ▼
+                       LOCK_COMMIT
+                            │ (camera transitions to ACTION view)
+                            ▼
+                  ┌─────────▼─────────┐
+                  │ 'locked'          │ ← prompt: "Hold Space to [act]"
+                  └─────────┬─────────┘
+                            │ (Space-press OR click-and-hold on plunger HUD)
+                            ▼
+                  ┌─────────▼─────────┐
+                  │ 'acting'          │ ← plungerCurve advances
+                  └─────────┬─────────┘
+                            │ (Space-release OR mouse-up)
+                            ▼
+                       RULE_FIRES (rules.ts)
+                            │
+              ┌─────────────┼─────────────┐
+              ▼             ▼             ▼
+            success      warning        failure
+              │             │             │
+              │             │             ▼
+              │             │       failureModal
+              │             │             │
+              ▼             ▼             ▼ (Try Again)
+       'finishing'    'finishing'      reset()
+              │             │
+              └──────┬──────┘
+                     │ (animation completes)
+                     ▼
+              activeStep++? RUN_GEL? GET_TIP again?
+                     │
+                     ▼
+                  'free'
+```
+
+Cancel from `locked` (Esc or click outside) returns to `free` without
+firing a rule.
+
+### Plunger mechanic detail (the thing the user wants to *feel*)
+
+When the pipette is locked and the player presses-and-holds (Space or
+mouse), the plunger depresses on a curve like:
+
+```
+         depth
+          1.0  ┤
+               │            ╭───
+               │           ╱
+   SOFT_STOP   │ ╶╶╶╶╶╶╶╮╮╶╯       ← brief pacing pause (~150 ms)
+          0.7  │       ╱            simulating soft-stop resistance
+               │      ╱             + visual notch + audio click
+               │     ╱
+          0.0  ┤────╯
+               └─────────────────── time held (ms)
+                  0    600    1100
+```
+
+- **0 → 600 ms:** linear ramp from 0 to 0.7 (soft stop).
+- **600 ms exactly:** brief pause (~150 ms) — plunger holds at 0.7, the
+  notch on the pipette body lights, click sound plays. This is what
+  the player learns to recognize as "the soft stop".
+- **750 → 1100 ms:** linear ramp from 0.7 to 1.0 (hard stop).
+- **>1100 ms:** clamps at 1.0.
+
+On release, `plungerOutcome(curve)` returns:
+- `'aborted'` if peakDepth < 0.5 → no liquid moved, no rule fires
+- `'soft'` if peakDepth ≥ 0.5 and crossedSoftStop ≥ 1
+- `'hard'` if peakDepth ≥ 0.95
+
+Rules then map outcome × action to result:
+
+| Action  | Outcome  | Result |
 |---|---|---|
-| NO_TIP             | hover=sample, hasTip=false, lowered=true                             | restart              |
-| PUNCTURE           | hover=well, loweredDepth ≥ PUNCTURE                                  | restart              |
-| NOT_LOW_ENOUGH     | hover=well, plunger crossed SOFT_STOP, loweredDepth < FULL           | restart              |
-| HARD_STOP_TO_DRAW  | hover=sample, plunger reached HARD_STOP while drawing                | restart, tube empty  |
-| SOFT_STOP_TO_EJECT | hover=well, plunger stopped within SOFT_STOP_TOLERANCE on eject      | warn, half DNA       |
-| NO_FRESH_TIP       | drawing from sample tube N+1 without DISCARD_TIP between N and N+1   | warn, lane muddled   |
+| Draw    | aborted  | nothing |
+| Draw    | soft     | success — full intake |
+| Draw    | hard     | `HARD_STOP_TO_DRAW` failure |
+| Eject   | aborted  | nothing |
+| Eject   | soft     | `SOFT_STOP_TO_EJECT` warning — half delivery, faint band |
+| Eject   | hard     | success — full delivery |
+| Pickup  | (any tap)| success on any non-aborted press |
+| Discard | (any tap)| success on any non-aborted press |
 
-**Tests**
+Pickup and discard don't have a soft/hard distinction — a single press
+of the plunger ejects the tip. (Consistent with real-life pipettes
+where a separate eject button on the side handles tips, but we simplify
+to "the plunger does everything" for clarity.)
 
-- One describe block per rule, exhaustive happy path + each failure +
-  each warning. This is the single largest test file — and the one
-  that pays the most.
-- Property test: starting from initial state, applying any sequence
-  of valid `Try*` calls eventually reaches RUN_GEL or a known failure.
+### Failure / warning copy table (per-mode, lives in `failures.ts`)
 
-**Acceptance**
+| Code | Title | Body | Hint (on second consecutive same failure) |
+|---|---|---|---|
+| `NO_TIP` | "No tip on the pipette" | "You tried to touch the sample without a fresh tip — that's a cross-contamination hazard. Pick up a tip first." | "Watch for the gold ring on the tip rack. Click or press Space when your cursor is over it." |
+| `HARD_STOP_TO_DRAW` | "Drew past the soft stop" | "Pressing past the soft stop while drawing pushes air into the sample. Stop at the click — you'll feel and hear it." | "Hold Space until you hear the click, then release. Don't keep pressing." |
+| `SOFT_STOP_TO_EJECT` (warning) | "Stopped at the soft stop" | "You only ejected the main volume; some sample stayed in the tip. The lane will look faint." | "Press past the click to deliver everything." |
+| `EMPTY_EJECT` | "Ejected with an empty tip" | "Your tip was empty when you pressed the plunger. Draw the sample to the soft stop first." | "Look at the volume readout — if it says 'Empty', go back to the sample tube." |
+| `NO_FRESH_TIP` (warning) | "Reused a tip on a new sample" | "Each sample needs a fresh tip — otherwise samples mix and lanes show muddled bands." | "After loading a well, discard the tip in the trash before picking up a new one." |
+| `WRONG_TUBE` (warning) | "Drew from the wrong sample" | "DNA 1 goes into well 1, DNA 2 into well 2, and so on. The lane you load will be mislabeled." | "Watch the highlighted tube — that's the one matching the next well." |
 
-- All six failure/warning modes reachable from real play.
-- Restart cleanly resets everything.
-- Store remains thin; rules are pure and testable without React.
+Body copy and hints can be tweaked freely; the table is the contract
+between the UI and the rules.
+
+### Camera presets (revised in C)
+
+| Preset | Position | LookAt | FOV | When |
+|---|---|---|---|---|
+| `OVERVIEW` | (8, 8, 12) | (0, 0, 0) | 35 | `interactionPhase === 'free'` |
+| `ACTION` | per-target side angle (~5° iso tilt, 4 units away) | locked target position | 30 | `'committing' / 'locked' / 'acting' / 'finishing'` |
+| `RUN` | (4, 6, 14) | (3, 0, -1) | 32 | `step === 'RUN_GEL' / 'COMPLETE'` (frames the gel) |
+
+`ACTION` is computed from the target: `position = target + (1.5, 1.0, 4)` rotated
+slightly so the player sees the pipette body and target in profile. Side view,
+~5° isometric — exactly what the product owner asked for.
+
+### Multi-well loop
+
+`activeStep` (0..3) drives:
+- which sample tube is highlighted (purple ring + bright opacity)
+- which well is highlighted (cyan ring)
+- which tubes/wells are *ghosted* (used: dashed outline, 0.4 opacity)
+- the prompt copy: "Pick up a fresh tip for **DNA 3** → Well 3"
+
+Loop:
+```
+GET_TIP(n)        →  tip rack must be hovered. Pickup commits.
+DRAW_SAMPLE(n)    →  tube[n] must be hovered (else WRONG_TUBE warning if
+                     hovering tube[m] m≠n; locking still allowed for
+                     pedagogy, but warning fires on success).
+LOAD_WELL(n)      →  well[n] must be hovered.
+DISCARD_TIP       →  trash must be hovered.
+if n+1 < 4: activeStep = n+1, step = GET_TIP
+else:        step = RUN_GEL
+```
+
+### `RUN_GEL` and `COMPLETE`
+
+- "Start Power Supply" button transitions step to `RUN_GEL`, sets
+  `runStartedAt = performance.now()`, switches to `RUN` camera preset.
+- A single `useFrame` reads `runStartedAt` and animates all bands
+  by elapsed time (no per-band `setInterval`).
+- After ~5 s, step becomes `COMPLETE`. Bands stop where they ended.
+- `<Debrief>` modal opens: per-lane verdict driven by warnings.
+  Verdicts: `clean` (no warnings on that lane), `faint`
+  (`SOFT_STOP_TO_EJECT`), `muddled` (`NO_FRESH_TIP` from prior step
+  contaminated this lane), `missing` (no DNA loaded).
+- "Run again" button calls `reset()` and returns to OVERVIEW.
+
+### Step-by-step execution (proposed PR sequencing)
+
+Six commits, each leaves the build green. Each is its own PR for
+review-ability — six small reviewable PRs vs. one giant unreviewable
+one. After each PR ships, the live deploy updates and the product
+owner can sanity-check.
+
+| # | Commit | Adds / changes | Behavior change? |
+|---|---|---|---|
+| C1 | Pure rules + plunger + failures + tests | `rules.ts`, `plunger.ts`, `failures.ts`, all `.test.ts`. Replace all `it.todo`s in `rules.test.ts`. | None — pure logic, not yet wired. |
+| C2 | Store + state-machine refactor | Adds new fields, removes old. `interactionPhase`, `lockedTarget`, `activeStep`, `plungerCurve`, `warnings`, `runStartedAt`. Reset/init paths updated. | None visible — driver still uses old API; new fields default to "free". |
+| C3 | Lock-and-act input + camera | `PlungerController`, `Prompt`, `PlungerHUD`, new `ACTION` camera preset. Slider gone. `InteractionDriver` rewritten to commit/cancel only. PUNCTURE / depth code deleted. | Major — playable with new mechanic. Single-well still. |
+| C4 | Multi-well loop + active highlights | `activeStep` consumed by `LabObjects` and `GelBox`. Tubes ghost, rings track. `WRONG_TUBE` and `NO_FRESH_TIP` warnings fire. | Multi-well sequential workflow works. |
+| C5 | Trash + discard step | `TrashBin` mesh; `DISCARD_TIP` step in workflow. | Closes the loop. |
+| C6 | RUN animation + Debrief | `Band` via `useFrame`; `runStartedAt`; `Debrief` modal; warnings → verdicts. README/title cleanup also lands here. | Production-ready end-to-end. |
+
+### Tests required
+
+- `plunger.test.ts`: depth at boundary times (0/600/750/1100/1500 ms),
+  `plungerOutcome` for each (action × outcome) combination.
+- `rules.test.ts`: every cell of the rule table above. Happy-path
+  full sequence (4 wells loaded → RUN_GEL). Each failure / warning
+  with minimal preconditions.
+- `failures.test.ts`: every `FailureCode` and `WarningCode` has a
+  `FAILURE_COPY` entry with non-empty `title` and `body`.
+- Integration / property test: starting from initial state, applying
+  any sequence of valid input events terminates in `RUN_GEL` or
+  `COMPLETE` with `failure: null` (i.e. the rules don't deadlock).
+
+Test count goal: 76 (today) → ≥ 110 by end of C.
+
+### Out of scope for C (deferred to D)
+
+- Tutorial overlay on first load
+- Per-step retry (vs. full reset)
+- Larger / color-distinct bands beyond the verdict-driven palette
+- Three.js deprecation warnings
+- Source maps for prod debugging
+- Camera orbit / zoom controls
+- Touch / mobile support
+- README content (vs. just the title fix already applied)
+- Settings panel (volume, hint frequency, etc.)
+
+### Decisions confirmed by product owner before drafting
+
+1. **Lock trigger is explicit** (click OR Space). No auto-lock-on-hover.
+   The on-screen prompt makes it discoverable.
+2. **Soft-stop pedagogy stays.** The redesign improves how the
+   stops *feel*; it does not remove the concept.
+3. **"Production-ready, not MVP"** — every feature in C ships
+   complete; nothing is stubbed.
+4. **Camera is fixed (3 choreographed presets), not user-controllable.**
+
+### Open design questions for product owner before C1 starts
+
+- **Audio.** Is a synthesized click at the soft stop OK, or do you
+  want a sourced sound (e.g. real micropipette click)? Synthesized is
+  zero-asset; sourced needs a license check.
+- **Cancel mechanic.** Esc is universal, but a visible "Cancel" button
+  next to the plunger HUD is more obvious for HS students. Both?
+- **Hint scaffolding.** Should hints appear (a) on second consecutive
+  same failure (current proposal), (b) on every failure, (c) only
+  after a "Show hint?" toggle?
+- **Debrief tone.** End-of-run debrief — celebratory ("Great work!
+  4/4 lanes clean") or neutral ("Lane 1: clean. Lane 2: faint.
+  Lane 3: muddled. Lane 4: clean.")? The neutral version is more
+  honest about the failures; the celebratory version is more
+  classroom-friendly.
 
 ---
 
-## Chunk D — Real RUN_GEL state, multi-well, polish
+## Chunk D — Polish (post-Chunk-C)
+
+Polishes that don't block production but improve the experience.
+Reordered post-redesign because some of the original D items are now
+folded into C.
 
 **Outline**
 
-- `RUN_GEL` becomes a real state with its own update loop.
-  `Band` stops using `setInterval`; one `useFrame` reads
-  `state.runStartedAt` and animates all bands by elapsed time.
-- Power-supply button transitions `RUN_GEL` → `COMPLETE` after a fixed
-  duration (e.g. 4 s wall-clock).
-- Debrief screen on `COMPLETE`: per-lane verdict
-  ("clean", "faint — soft-stop eject", "muddled — reused tip",
-  "missing — leaked into buffer").
-- Trash bin object for tip discard.
-- README cleanup: drop the AI-Studio Gemini boilerplate.
-- `vite.config.ts`: drop `process.env.GEMINI_API_KEY` define if no
-  longer needed.
+- Tutorial overlay on first load (storage flag to skip on return).
+- Per-step retry button distinct from full reset.
+- Three.js deprecation warnings cleanup (`THREE.Clock` → `Timer`,
+  `PCFSoftShadowMap` → `PCFShadowMap` or update three.js).
+- Source maps shipped for prod (so real student errors are debuggable).
+- Settings panel: audio toggle, hint frequency.
+- README rewrite (no more AI Studio boilerplate).
+- `vite.config.ts`: drop `process.env.GEMINI_API_KEY` define if
+  no longer needed.
+- Polarity labels with arrows + "Smaller →" caption.
+- Optional: limited camera orbit (±15° azimuth) for "look around" without
+  losing choreography.
 
 **Tests**
 
-- Animation math (`bandPositionAt(elapsedMs, sizeKb)`) tested as a
-  pure function.
-- Debrief mapping (`verdictForLane(state, i) → Verdict`) tested with
-  table of states.
+- Tutorial dismissal persists across reloads.
+- Settings persistence.
 
 ---
 
