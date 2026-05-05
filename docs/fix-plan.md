@@ -13,7 +13,69 @@ honors.
 
 ---
 
+## Decision Log
+
+Newest entries first. The first entry is the **current canonical
+state** — anything older is historical context for why we got here.
+
+### 2026-05-05 — Lock-and-act redesign supersedes hold-and-drag
+
+**Failure / warning taxonomy (canonical as of this date).** Six modes
+ship in Chunk C; two earlier modes are *retired* because the new input
+model cannot produce them.
+
+| Code | Kind | Status | Notes |
+|---|---|---|---|
+| `NO_TIP` | failure | active | Lock onto sample without a tip. |
+| `HARD_STOP_TO_DRAW` | failure | active | Plunger past soft stop while drawing. |
+| `EMPTY_EJECT` | failure | active | Eject with no liquid in tip. |
+| `SOFT_STOP_TO_EJECT` | warning | active | Plunger stops at soft stop while ejecting; lane gets ~half DNA → faint band. |
+| `NO_FRESH_TIP` | warning | active | Draw from a new sample without discarding the previous tip; lane shows muddled bands. |
+| `WRONG_TUBE` | warning | active | Lock onto a tube that doesn't match the active step's well; lane mislabeled. Replaces the conceptual gap left by retiring NOT_LOW_ENOUGH. |
+| `PUNCTURE` | failure | **retired** | Was a depth-hold artifact; lock-and-act has no continuous depth control, so the failure cannot occur. Removed from the rules layer in C1. |
+| `NOT_LOW_ENOUGH` | failure | **retired** | Same reason: locking automatically positions the tip at the correct depth. Cannot be reached. |
+
+**Warning vs. failure semantics (canonical).** All three warning codes
+*allow progress with a degraded lane*. The workflow advances; the
+warning is recorded in `state.warnings[]` and surfaces in the
+end-of-run debrief. Failures, by contrast, halt the workflow and
+require `reset()` via the failure modal's "Try Again" button.
+
+**Release gating.** Chunk C is **one release**, not six. C1–C5 are
+internal increments that live on a long-lived `claude/chunk-c` feature
+branch. They are never merged to `main` individually because every
+push to `main` auto-deploys to GitHub Pages, and the intermediate
+states (e.g. C3's single-well-only state) are not playable as a
+production release. Only **C6 closes the branch via a single PR to
+`main`**. CI runs against the feature branch each commit so we keep
+the lights green; the production deploy only updates once at the end.
+This decision is what the original Chunk C acceptance language
+("nothing deferred inside C's surface") was reaching for; this entry
+makes the mechanism concrete.
+
+**Property-test scope.** The originally-proposed termination property
+("any sequence of valid input events terminates in `RUN_GEL` /
+`COMPLETE` with `failure: null`") is overstated and replaced by
+*safety invariants plus bounded liveness*. See "Tests required" in
+Chunk C for the full list.
+
+**Older goal-section copy now stale.** The "Goals" section below still
+describes the original six-failure taxonomy with `PUNCTURE` and
+`NOT_LOW_ENOUGH` as core. That language records the *original product
+goal*, kept for traceability — but the canonical taxonomy is in this
+log entry. When implementations or QA rubrics conflict, this log
+wins.
+
+---
+
 ## Goals (from product owner)
+
+> **Note (added 2026-05-05):** The failure taxonomy below records the
+> *original* product goal verbatim. The current canonical taxonomy
+> lives in the Decision Log above and differs: `PUNCTURE` and
+> `NOT_LOW_ENOUGH` are retired in lock-and-act mode; `WRONG_TUBE`
+> joins the active set. Treat this section as historical, the log as
+> authoritative.
 
 - **Audience:** HS students with no prior pipetting experience.
 - **Length:** 3–5 minutes per playthrough, simple controls.
@@ -530,11 +592,16 @@ need to bail:
 
 ### What's deliberately NOT in B
 
-- Multi-well sequential loading (Chunk D).
-- Per-tube hover triggering INTAKE for the right tube (Chunk C — the
-  full rules layer handles this).
-- Failure modes other than PUNCTURE (Chunk C).
-- Trash bin / discard tip / NO_FRESH_TIP (Chunks C/D).
+(References here updated to match the post-redesign Chunk C scope —
+see Decision Log entry 2026-05-05.)
+
+- Multi-well sequential loading (**Chunk C**, C4/C5).
+- Per-tube hover triggering DRAW_SAMPLE for the right tube (**Chunk C**,
+  C3/C4 — the full rules layer plus active highlight handle this).
+- Failure modes other than `PUNCTURE` (**Chunk C**, C1/C3 wire all six
+  modes — except `PUNCTURE` itself, which is *retired* in lock-and-act
+  mode; see Decision Log).
+- Trash bin / discard tip / `NO_FRESH_TIP` (**Chunk C**, C5).
 - README cleanup, removing Gemini env (Chunk D).
 
 ### Estimated size
@@ -596,17 +663,19 @@ four samples in sequence, then run the gel.
 
 ### Acceptance criteria
 
-- **Production-ready**, not MVP. Limited scope but feature-complete.
-  No "stubbed" or "deferred to D" interactions inside C's surface.
-- All six failure/warning modes reachable from real input:
-  `NO_TIP`, `HARD_STOP_TO_DRAW`, `SOFT_STOP_TO_EJECT`, `EMPTY_EJECT`,
-  `NO_FRESH_TIP`, `WRONG_TUBE`. (`PUNCTURE` and `NOT_LOW_ENOUGH` are
-  *removed* — they were depth-mechanic artifacts that the new input
-  model can't produce.)
-- Multi-well loop works: four samples, four wells, fresh-tip discipline,
-  ending in a gel run with four lanes.
+**Release-level (gates the merge of `claude/chunk-c` to `main`)**
+
+- **Production-ready when the branch closes.** C is a single release
+  to `main`, not six. C1–C5 live on the long-lived `claude/chunk-c`
+  feature branch and never auto-deploy in their intermediate states.
+  Only the final merge of C6 (which by then contains all of C1–C5)
+  produces a Pages deploy. See Decision Log → Release gating.
+- All **six** active failure/warning modes per the canonical taxonomy
+  (Decision Log) reachable from real input.
+- Multi-well loop works: four samples, four wells, fresh-tip
+  discipline, ending in a gel run with four lanes.
 - Soft-stop pedagogy preserved and *teachable*: visible click + audio
-  cue + brief pacing resistance at 70% plunger depth. Players can
+  cue + brief pacing resistance at 70 % plunger depth. Players can
   feel the difference between "stop at the click" and "push through".
 - Trash bin is a visible mesh, hover-targetable, and consumes
   `tryDiscardTip`.
@@ -614,9 +683,22 @@ four samples in sequence, then run the gel.
   no float-equality gates.
 - Failure modal copy is per-mode (title + body + optional hint), not
   one generic header.
-- Bands separate over a real time window during `RUN_GEL`; `setInterval`
-  is gone.
-- Lint clean. `npm test` covers every rule path. Existing tests pass.
+- Bands separate over a real time window during `RUN_GEL`;
+  `setInterval`-per-band is gone.
+- Lint clean, `npm run build` clean, `npm test` covers every rule
+  path. All existing tests pass.
+
+**Per-commit (what each internal increment must satisfy on the
+feature branch)**
+
+- Each of C1..C6 leaves the feature branch lint-clean, build-clean,
+  and tests-green. CI runs on the feature branch, not just on `main`.
+- C1, C2 introduce no observable behavior change in the running app.
+- C3 is allowed to be single-well in its observable behavior
+  (multi-well lands in C4) — *because it never reaches `main`
+  on its own*. The release gate above is what makes this OK.
+- C4, C5, C6 are each cumulatively closer to release-ready, but only
+  the C6 merge is the deployable artifact.
 
 ### Architecture
 
@@ -646,6 +728,42 @@ ui       →  UIOverlay (prompts, plunger HUD, failure modal, debrief)
 **Crucial split:** rules are pure functions on `(state, input) → Result`.
 The driver / controllers only translate user input into rule calls.
 This is what `src/sim/rules.test.ts` was scaffolded for in PR #6.
+
+### Contracts (subtle but important)
+
+**Warning vs. failure semantics.** Both kinds of rule outcome record
+something for the player to learn from, but they differ in how the
+workflow proceeds.
+
+| Kind | Workflow effect | Modal | Recorded in | Effect on band |
+|---|---|---|---|---|
+| **failure** | halts; requires `reset()` to retry | hard-stop modal with title + body + "Try Again" | `state.failure` (single value, replaces previous) | n/a — run is bricked |
+| **warning** | progresses normally; lane proceeds | none mid-run; surfaces in end-of-run debrief | `state.warnings: { code, lane }[]` (append-only between resets) | per-warning visual: faint band (`SOFT_STOP_TO_EJECT`), muddled band (`NO_FRESH_TIP`), wrong-label band (`WRONG_TUBE`) |
+
+The "allow progress with a degraded lane" rule is intentional —
+soft-block warnings would interrupt a 3–5 minute experience too
+often. The teaching happens at the debrief, where the student sees
+*which lane* shows the consequence and is told why.
+
+**Legacy store-field migration policy.** Chunk B introduced new fields
+(`pointer`, `hoverTarget`, `loweredDepth`) and kept old flags
+(`isNearTips`, `isNearSample`, `activeWellIndex`, `isLowered`,
+`plungerPos`) as mirrored values to avoid breaking unmigrated
+consumers. C must retire those mirrors on a schedule:
+
+| Legacy field | Used by today | Removed in | How |
+|---|---|---|---|
+| `isLowered` | `UIOverlay.handlePlungerChange` gate; `UIOverlay` "PIPETTE LOWERED" badge | C2 | gate replaced by `interactionPhase === 'acting'`; badge removed (the camera transition is the visual cue) |
+| `loweredDepth` | `CameraRig` blend; `Pipette` lerp | C3 | blend keyed off `interactionPhase` discrete state; pipette position lerps to `lockedTarget` directly |
+| `plungerPos` (continuous) | the rotated slider | C3 | replaced by `plungerCurve` (richer record of the depression event) |
+| `isNearTips`, `isNearSample` | `UIOverlay.showPlunger` | C3 | replaced by direct `hoverTarget` check; `Prompt` component subsumes the show/hide logic |
+| `activeWellIndex` | `GelBox` alignment ring | C4 | replaced by `activeStep` (drives both the highlighted well and the highlighted sample tube) plus `hoverTarget` (drives the live-hover ring) |
+| `setHasTip`, `setLiquid`, etc. setters | components | retained | rules.ts produces `nextState` patches; setters become a thin internal applier |
+
+C2 introduces the new fields and the mirroring becomes one-way (driver
+writes new, computes legacy). C3..C4 delete legacy reads at the call
+sites, then C4 removes the mirroring code entirely. The store should
+have **zero** legacy fields by the end of C4.
 
 ### Files to add
 
@@ -680,6 +798,10 @@ This is what `src/sim/rules.test.ts` was scaffolded for in PR #6.
 | `src/sim/config.ts` | Add `LOCK = { COMMIT_HOLD_MS: 0 }` (commit is instant on click/Space — no auto-lock). Add `PLUNGER.HOLD_TO_SOFT_MS: 600`, `PLUNGER.HOLD_TO_HARD_MS: 1100`, `PLUNGER.SOFT_STOP_RESISTANCE_MS: 150` (pacing pause). Remove `LOWER_HOLD_*`. |
 
 ### State machine (the authoritative source going forward)
+
+The diagram below is illustrative. The **canonical contract** is the
+transition table that follows it — every implementation in C and every
+test in `rules.test.ts` must conform to this table.
 
 ```
        cursor moves freely; pipette follows pointer
@@ -726,8 +848,40 @@ This is what `src/sim/rules.test.ts` was scaffolded for in PR #6.
                   'free'
 ```
 
+#### Canonical transition table
+
+Columns: from-state → input → guard → to-state → side effects.
+
+| From | Input | Guard | To | Side effects |
+|---|---|---|---|---|
+| `free` | cursor over valid hover for current step | always | `free` | prompt overlay shows; cursor ring → green |
+| `free` | `Click` or `Space-down` | `hoverTarget` matches step's allowed kinds | `committing` | `lockedTarget` ← hoverTarget; camera tween → ACTION begins |
+| `free` | `Click` or `Space-down` | hover invalid for step (e.g. cursor over well during GET_TIP) | `free` | no-op; prompt remains "move to [target]" |
+| `committing` | camera tween reaches ≥ 95 % | always | `locked` | prompt overlay updates to "Hold Space to [act]" |
+| `committing` | `Esc` or click outside | always | `free` | tween reverses; `lockedTarget` cleared |
+| `locked` | `Space-down` or mouse-down on plunger HUD | always | `acting` | `plungerCurve.startMs ← now`, `plungerCurve.crossedSoftStop ← false` |
+| `locked` | `Esc` or click outside | always | `free` | camera tween → OVERVIEW; `lockedTarget` cleared |
+| `acting` | per-frame tick | always | `acting` | `plungerCurve.currentMs ← now − startMs`; if depth crosses `SOFT_STOP`, `crossedSoftStop ← true` |
+| `acting` | `Space-up` or mouse-up | always | (rule decides) | `rules.tryAct(state, lockedTarget, plungerCurve)` is invoked |
+| rule result `success` | — | — | `finishing` | `nextState` applied; `events: ['STEP_ADVANCED']` |
+| rule result `warning(code)` | — | — | `finishing` | `state.warnings ← [...warnings, { code, lane: activeStep }]`; `nextState` applied |
+| rule result `failure(code)` | — | — | `finishing` | `state.failure ← code`; failureModal opens |
+| `finishing` (success/warning) | animation timer reaches end | `step === 'DISCARD_TIP'` AND `activeStep + 1 < WELL_COUNT` | `free` | `step ← 'GET_TIP'`, `activeStep++`, camera → OVERVIEW |
+| `finishing` (success/warning) | animation timer reaches end | `step === 'DISCARD_TIP'` AND `activeStep + 1 === WELL_COUNT` | `free` | `step ← 'RUN_GEL'`, camera → RUN |
+| `finishing` (success/warning) | animation timer reaches end | otherwise | `free` | `step` advances within current cycle (`GET_TIP` → `DRAW_SAMPLE` → `LOAD_WELL` → `DISCARD_TIP`); camera → OVERVIEW |
+| `finishing` (failure) | "Try Again" clicked in modal | always | `free` | `reset()`; camera → OVERVIEW; `failure: null` |
+| `RUN_GEL` (step) | "Start Power Supply" clicked | always | `RUN_GEL` (step) + `interactionPhase: 'free'` | `runStartedAt ← now`; band animation begins; camera → RUN |
+| `RUN_GEL` (step) | run timer reaches `RUN_DURATION_MS` | always | `COMPLETE` (step) | Debrief modal opens with per-lane verdicts |
+| `COMPLETE` (step) | "Run Again" clicked | always | initial state | `reset()` |
+
+**Notes on the table.**
+- "Step" (outer: `GET_TIP / DRAW_SAMPLE / LOAD_WELL / DISCARD_TIP / RUN_GEL / COMPLETE`) and `interactionPhase` (inner: `free / committing / locked / acting / finishing`) are independent dimensions. Most transitions in the table operate on `interactionPhase`; the bottom rows operate on the outer step.
+- "Hover invalid for step" is computed by `rules.tryLockOnto(state, hover) → Result`; the table delegates the guard to that pure function. See "Files to add" → `src/sim/rules.ts`.
+- `WRONG_TUBE` is *not* a guard rejection — locking onto the wrong tube during `DRAW_SAMPLE` is *allowed*; the warning fires when the rule resolves the action with a hover index that doesn't match `activeStep`. This is the "allow progress with degraded lane" semantics from the Decision Log.
+
 Cancel from `locked` (Esc or click outside) returns to `free` without
-firing a rule.
+firing a rule and without recording a warning. Only completed actions
+generate events.
 
 ### Plunger mechanic detail (the thing the user wants to *feel*)
 
@@ -896,10 +1050,18 @@ commit since they touch the same JSX block.
 
 ### Step-by-step execution (proposed PR sequencing)
 
-Six commits, each leaves the build green. Each is its own PR for
-review-ability — six small reviewable PRs vs. one giant unreviewable
-one. After each PR ships, the live deploy updates and the product
-owner can sanity-check.
+Six commits, each leaves the feature branch lint/test/build green.
+The commits land on a long-lived `claude/chunk-c` branch (see
+Decision Log → Release gating); CI runs against the branch each
+commit, but **none of C1..C5 ships to `main` individually**. The
+final C6 PR closes the branch into `main` as a single deployable
+release. This avoids deploying intermediate states (e.g. C3's
+single-well-only build) to GitHub Pages.
+
+If review-by-PR is preferred during development, each internal
+commit can be opened as a *draft PR against the feature branch*
+(not against `main`) for review-of-record without triggering
+deploy. Only the final PR targets `main`.
 
 | # | Commit | Adds / changes | Behavior change? |
 |---|---|---|---|
@@ -912,16 +1074,60 @@ owner can sanity-check.
 
 ### Tests required
 
-- `plunger.test.ts`: depth at boundary times (0/600/750/1100/1500 ms),
-  `plungerOutcome` for each (action × outcome) combination.
-- `rules.test.ts`: every cell of the rule table above. Happy-path
-  full sequence (4 wells loaded → RUN_GEL). Each failure / warning
-  with minimal preconditions.
-- `failures.test.ts`: every `FailureCode` and `WarningCode` has a
-  `FAILURE_COPY` entry with non-empty `title` and `body`.
-- Integration / property test: starting from initial state, applying
-  any sequence of valid input events terminates in `RUN_GEL` or
-  `COMPLETE` with `failure: null` (i.e. the rules don't deadlock).
+**Unit tests**
+
+- `plunger.test.ts`: depth at boundary times (0 / 600 / 750 / 1100 /
+  1500 ms), `plungerOutcome` for each (action × outcome)
+  combination.
+- `rules.test.ts`: every row of the canonical transition table.
+  Happy-path full sequence (4 wells loaded → `RUN_GEL`). Each failure
+  / warning code with minimal preconditions.
+- `failures.test.ts`: every `FailureCode` and `WarningCode` from the
+  Decision Log has a `FAILURE_COPY` entry with non-empty `title` and
+  `body`.
+
+**Safety invariants** (replaces the originally-stated
+"any sequence terminates" property test, which was overstated —
+nothing prevents a player from cancel-locking forever or
+restarting after every failure)
+
+- `INV-1` **No deadlock.** From any reachable state, at least one
+  input event leads to a different state. (Cancel from `'free'` is
+  always available; `reset()` from any state is always available;
+  ergo every state has at least one outgoing transition.)
+- `INV-2` **`activeStep` is monotonic between `reset()`s.** Every
+  rule's `nextState` either holds `activeStep` constant or
+  increments it by 1. Decrement is *only* via `reset()`.
+- `INV-3` **Failure is recoverable.** From any state where
+  `state.failure !== null`, `reset()` returns the store to the
+  initial state with `failure: null`.
+- `INV-4` **`warnings` is append-only between `reset()`s.** No rule
+  removes a warning; `reset()` clears the array.
+- `INV-5` **Every transition is in the canonical table.** Property
+  test: enumerate every (state, input) pair the driver can emit and
+  assert the resulting state matches a row of the canonical table.
+  Anything not in the table is a bug.
+
+**Bounded liveness** (replaces the unbounded "always terminates")
+
+- `LIVE-1` **Happy-path completion is bounded.** Under the input
+  sequence "follow each prompt until satisfied", the workflow
+  reaches `COMPLETE` in at most `WELL_COUNT` cycles ×
+  (lock-commit + draw + lock-commit + load + lock-commit + discard)
+  + 1 run timer. With `WELL_COUNT = 4`, that's at most 12 lock
+  commits + the final run.
+- `LIVE-2` **No silent stall after success.** After any rule returns
+  `success`, `state.interactionPhase` reaches `'finishing'` within
+  one frame and `'free'` within
+  `FINISHING_ANIMATION_MS + 1` frame.
+
+**Integration test**
+
+- One end-to-end test that exercises the happy path through a
+  scripted input timeline (commit → hold → release × 12, then click
+  Run) and asserts: 4 lanes loaded, no warnings, no failure,
+  `step === 'COMPLETE'`. Implemented as a logic-only test — no r3f
+  rendering.
 
 Test count goal: 76 (today) → ≥ 110 by end of C.
 
