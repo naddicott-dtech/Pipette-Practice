@@ -1,13 +1,22 @@
 name: Deploy to GitHub Pages
 
-# Deploy any branch's commits that actually touch the app. With no live
-# users, fast iteration > release discipline — feature branches deploy
-# their state to the single Pages slot, last push wins. Coordinate
-# manually when multiple branches are active.
+# Deploy main's app-touching commits to GitHub Pages. Doc-only and
+# CI-config-only commits don't redeploy (path filter below).
 #
-# Doc-only and CI-config-only commits don't deploy (path filter below).
+# Why main-only? GitHub Pages has one URL; per-PR preview deploys would
+# need a separate host (Vercel / Netlify). The github-pages environment
+# is also restricted to the default branch by default, so feature-branch
+# pushes built the artifact then failed at the deploy step. Restricting
+# the trigger to main aligns with that.
+#
+# Feature-branch CI still runs lint/test/build via the build job (which
+# this workflow only schedules on main pushes). For per-branch CI gating,
+# add a separate workflow that runs on `pull_request` events without the
+# deploy job. We don't need that yet — chunk C reviews happen against the
+# diff plus the merged-main deploy.
 on:
   push:
+    branches: [main]
     paths:
       - 'src/**'
       - 'index.html'
