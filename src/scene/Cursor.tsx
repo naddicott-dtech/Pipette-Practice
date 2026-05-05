@@ -14,7 +14,7 @@ const NOT_READY_COLOR = new THREE.Color('#ef4444');
 /**
  * Ground-plane ring rendered at the world point under the cursor.
  * Color is green when the player has the right thing for the current
- * step (e.g. holding a tip during INTAKE_SAMPLE), red otherwise.
+ * step (e.g. holding a tip during DRAW_SAMPLE), red otherwise.
  *
  * Reads pointer via the ref pattern — no React state changes per frame.
  */

@@ -1,73 +1,52 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useStore, selectRuleState, WorkflowStep, FailureMode } from './store';
+import { useStore, selectRuleState, WorkflowStep } from './store';
 import { WORKFLOW } from './sim/config';
 import { initialRuleState, tryAct } from './sim/rules';
 import { startCurve, tickCurve } from './sim/plunger';
 import type { RuleState } from './sim/types';
 
-describe('Micropipette Simulation Logic — legacy', () => {
+describe('Store — basic workflow + setters', () => {
   beforeEach(() => {
     useStore.getState().reset();
   });
 
-  it('should start at GET_TIP step', () => {
+  it('starts at GET_TIP step with no tip and no liquid', () => {
     const state = useStore.getState();
     expect(state.step).toBe(WorkflowStep.GET_TIP);
     expect(state.hasTip).toBe(false);
+    expect(state.liquidInTip).toBe(0);
   });
 
-  it('should pick up a tip and progress to intake', () => {
+  it('can advance to DRAW_SAMPLE with a tip in hand', () => {
     useStore.getState().setHasTip(true);
-    useStore.getState().setStep(WorkflowStep.INTAKE_SAMPLE);
+    useStore.getState().setStep(WorkflowStep.DRAW_SAMPLE);
 
     const state = useStore.getState();
     expect(state.hasTip).toBe(true);
-    expect(state.step).toBe(WorkflowStep.INTAKE_SAMPLE);
+    expect(state.step).toBe(WorkflowStep.DRAW_SAMPLE);
   });
 
-  it('should trigger puncture failure (legacy)', () => {
-    useStore.getState().setFailure(FailureMode.PUNCTURE);
-    const state = useStore.getState();
-    expect(state.failure).toBe(FailureMode.PUNCTURE);
+  it('records a failure code via setFailure', () => {
+    useStore.getState().setFailure('HARD_STOP_TO_DRAW');
+    expect(useStore.getState().failure).toBe('HARD_STOP_TO_DRAW');
   });
 
-  it('should track liquid volume correctly', () => {
+  it('tracks liquid volume', () => {
     useStore.getState().setLiquid(0.5);
     expect(useStore.getState().liquidInTip).toBe(0.5);
-
     useStore.getState().setLiquid(0);
     expect(useStore.getState().liquidInTip).toBe(0);
   });
 
-  it('should record DNA in wells', () => {
+  it('records DNA in wells (clamped at 1)', () => {
     useStore.getState().addDnaToWell(0, 0.8);
     expect(useStore.getState().dnaInWells[0]).toBe(0.8);
-  });
-
-  it('should track lowering state', () => {
-    expect(useStore.getState().isLowered).toBe(false);
-    useStore.getState().setIsLowered(true);
-    expect(useStore.getState().isLowered).toBe(true);
-  });
-
-  it('should track proximity states', () => {
-    expect(useStore.getState().isNearSample).toBe(false);
-    useStore.getState().setIsNearSample(true);
-    expect(useStore.getState().isNearSample).toBe(true);
-
-    expect(useStore.getState().isNearTips).toBe(false);
-    useStore.getState().setIsNearTips(true);
-    expect(useStore.getState().isNearTips).toBe(true);
-  });
-
-  it('should reset plunger to 0 when resetting or lowering (conceptual)', () => {
-    useStore.getState().setPlunger(0.5);
-    useStore.getState().reset();
-    expect(useStore.getState().plungerPos).toBe(0);
+    useStore.getState().addDnaToWell(0, 0.5);
+    expect(useStore.getState().dnaInWells[0]).toBe(1);
   });
 });
 
-describe('Chunk C2 — new RuleState fields', () => {
+describe('Store — RuleState fields', () => {
   beforeEach(() => {
     useStore.getState().reset();
   });
@@ -82,7 +61,7 @@ describe('Chunk C2 — new RuleState fields', () => {
     expect(s.liquidSourceIndex).toBe(init.liquidSourceIndex);
     expect(s.usedTubes).toEqual(init.usedTubes);
     expect(s.warnings).toEqual(init.warnings);
-    expect(s.ruleFailure).toBe(init.failure);
+    expect(s.failure).toBe(init.failure);
     expect(s.interactionPhase).toBe(init.interactionPhase);
     expect(s.lockedTarget).toBe(init.lockedTarget);
     expect(s.dnaInWells).toEqual(Array(WORKFLOW.WELL_COUNT).fill(0));
@@ -114,22 +93,6 @@ describe('Chunk C2 — new RuleState fields', () => {
       { code: 'WRONG_TUBE', lane: 0 },
       { code: 'NO_FRESH_TIP', lane: 1 },
     ]);
-  });
-
-  it('setRuleFailure sets the new failure code (separate from legacy)', () => {
-    useStore.getState().setRuleFailure('HARD_STOP_TO_DRAW');
-    const s = useStore.getState();
-    expect(s.ruleFailure).toBe('HARD_STOP_TO_DRAW');
-    // Legacy failure untouched.
-    expect(s.failure).toBeNull();
-  });
-
-  it('legacy and rule failures are independent fields', () => {
-    useStore.getState().setFailure(FailureMode.PUNCTURE);
-    useStore.getState().setRuleFailure('HARD_STOP_TO_DRAW');
-    const s = useStore.getState();
-    expect(s.failure).toBe(FailureMode.PUNCTURE);
-    expect(s.ruleFailure).toBe('HARD_STOP_TO_DRAW');
   });
 
   it('setInteractionPhase advances the phase', () => {
@@ -164,14 +127,14 @@ describe('Chunk C2 — new RuleState fields', () => {
   });
 });
 
-describe('Chunk C2 — reset clears all new fields', () => {
-  it('reset wipes new RuleState fields back to defaults', () => {
+describe('Store — reset', () => {
+  it('reset wipes RuleState fields back to defaults', () => {
     const s = useStore.getState();
     s.setActiveStep(3);
     s.setLiquidSourceIndex(2);
     s.addUsedTube(0);
     s.addUsedTube(1);
-    s.setRuleFailure('NO_TIP');
+    s.setFailure('NO_TIP');
     s.addWarning({ code: 'WRONG_TUBE', lane: 0 });
     s.setInteractionPhase('locked');
     s.setLockedTarget({ kind: 'tip-rack' });
@@ -184,7 +147,7 @@ describe('Chunk C2 — reset clears all new fields', () => {
     expect(after.activeStep).toBe(0);
     expect(after.liquidSourceIndex).toBeNull();
     expect(after.usedTubes).toEqual([]);
-    expect(after.ruleFailure).toBeNull();
+    expect(after.failure).toBeNull();
     expect(after.warnings).toEqual([]);
     expect(after.interactionPhase).toBe('free');
     expect(after.lockedTarget).toBeNull();
@@ -210,7 +173,7 @@ describe('Chunk C2 — reset clears all new fields', () => {
   });
 });
 
-describe('Chunk C2 — applyRulePatch (rules.ts → store bridge)', () => {
+describe('Store — applyRulePatch (rules.ts → store bridge)', () => {
   beforeEach(() => {
     useStore.getState().reset();
   });
@@ -229,28 +192,20 @@ describe('Chunk C2 — applyRulePatch (rules.ts → store bridge)', () => {
     expect(s.liquidInTip).toBe(1);
   });
 
-  it('translates RuleState.failure into store.ruleFailure', () => {
+  it('applies a failure code 1:1 (post-C3 unification)', () => {
     useStore.getState().applyRulePatch({
       failure: 'EMPTY_EJECT',
       interactionPhase: 'finishing',
     });
     const s = useStore.getState();
-    expect(s.ruleFailure).toBe('EMPTY_EJECT');
+    expect(s.failure).toBe('EMPTY_EJECT');
     expect(s.interactionPhase).toBe('finishing');
-    // Legacy failure must NOT be touched by rules.
-    expect(s.failure).toBeNull();
   });
 
-  it('clears ruleFailure when the patch sets failure to null', () => {
-    useStore.getState().setRuleFailure('NO_TIP');
+  it('clears failure when the patch sets it to null', () => {
+    useStore.getState().setFailure('NO_TIP');
     useStore.getState().applyRulePatch({ failure: null });
-    expect(useStore.getState().ruleFailure).toBeNull();
-  });
-
-  it('does not touch ruleFailure when the patch omits failure', () => {
-    useStore.getState().setRuleFailure('NO_TIP');
-    useStore.getState().applyRulePatch({ activeStep: 2 });
-    expect(useStore.getState().ruleFailure).toBe('NO_TIP');
+    expect(useStore.getState().failure).toBeNull();
   });
 
   it('replaces array fields when the patch provides a new array', () => {
@@ -260,7 +215,7 @@ describe('Chunk C2 — applyRulePatch (rules.ts → store bridge)', () => {
   });
 });
 
-describe('Chunk C2 — selectRuleState', () => {
+describe('Store — selectRuleState', () => {
   beforeEach(() => {
     useStore.getState().reset();
   });
@@ -290,17 +245,9 @@ describe('Chunk C2 — selectRuleState', () => {
     expect(projected.lockedTarget).toEqual({ kind: 'well', index: 0 });
     expect(projected.interactionPhase).toBe('locked');
   });
-
-  it('maps store.ruleFailure (not store.failure) to RuleState.failure', () => {
-    useStore.getState().setFailure(FailureMode.PUNCTURE);
-    useStore.getState().setRuleFailure('NO_TIP');
-    const projected = selectRuleState(useStore.getState());
-    expect(projected.failure).toBe('NO_TIP');
-    // PUNCTURE is a legacy concept; rules never see it.
-  });
 });
 
-describe('Chunk C2 — round-trip rule application through the store', () => {
+describe('Store — round-trip rule application', () => {
   beforeEach(() => {
     useStore.getState().reset();
   });

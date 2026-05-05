@@ -1,10 +1,10 @@
-import React, { useEffect, useRef } from 'react';
+import React from 'react';
 import { useFrame } from '@react-three/fiber';
 import type { WorldPointRef } from './usePointerWorld';
-import { useStore, WorkflowStep, FailureMode } from '../store';
+import { useStore } from '../store';
 import { findHover } from '../sim/hover';
-import { depthFromHoldMs } from '../sim/depth';
 import { TIP_RACK, TRASH, SAMPLE_TUBES, WELLS } from './targets';
+import type { HoverTarget } from '../sim/types';
 
 interface DriverProps {
   pointerRef: WorldPointRef;
@@ -18,98 +18,51 @@ const TARGETS = {
 } as const;
 
 /**
- * Non-rendering. Each frame:
- *  - Reads the world pointer.
- *  - Computes hoverTarget and writes it to the store.
- *  - Mirrors hoverTarget to legacy flags (isNearTips, isNearSample,
- *    activeWellIndex) so older consumers keep working until Chunk C.
- *  - Tracks Space-key hold duration → loweredDepth.
- *  - Advances GET_TIP → INTAKE_SAMPLE when the player lowers fully over
- *    the tip rack.
+ * Hover detection only. Slimmed in C3: previously also owned the
+ * hold-to-lower mechanic, depth ramp, PUNCTURE wiring, and the
+ * GET_TIP → INTAKE_SAMPLE transition — all gone with the legacy
+ * mechanic. Lock and plunger lifecycles now live in PlungerController.
  *
- * Failure-mode wiring (PUNCTURE etc.) lives in B4.
+ * Each frame:
+ *   1. Read the world pointer.
+ *   2. Compute hoverTarget via the pure findHover.
+ *   3. Mirror to store.pointer + store.hoverTarget.
+ *   4. Mirror hoverTarget.well.index → store.activeWellIndex (legacy
+ *      field GelBox still reads through C4).
+ *
+ * The hover write only fires on actual change — same-shape comparison —
+ * so we don't trigger zustand subscriber re-renders every frame.
  */
 export function InteractionDriver({ pointerRef }: DriverProps) {
-  const holdStart = useRef<number | null>(null);
-  const spaceDown = useRef(false);
-
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.code !== 'Space' || spaceDown.current) return;
-      spaceDown.current = true;
-      holdStart.current = performance.now();
-      useStore.getState().setPlunger(0);
-    };
-    const onKeyUp = (e: KeyboardEvent) => {
-      if (e.code !== 'Space') return;
-      spaceDown.current = false;
-      holdStart.current = null;
-    };
-    const onBlur = () => {
-      spaceDown.current = false;
-      holdStart.current = null;
-    };
-    window.addEventListener('keydown', onKeyDown);
-    window.addEventListener('keyup', onKeyUp);
-    window.addEventListener('blur', onBlur);
-    return () => {
-      window.removeEventListener('keydown', onKeyDown);
-      window.removeEventListener('keyup', onKeyUp);
-      window.removeEventListener('blur', onBlur);
-    };
-  }, []);
-
   useFrame(() => {
     const state = useStore.getState();
-    if (state.failure !== null) return;
 
-    // 1. Pointer + hover
     const point = pointerRef.current;
     if (state.pointer !== point) state.setPointer(point);
+
     const hover = point ? findHover(point, TARGETS) : null;
 
-    // Avoid setting hoverTarget when shape-equal — prevents render churn.
-    const prevHover = state.hoverTarget;
-    const same =
-      (prevHover === null && hover === null) ||
-      (prevHover && hover && prevHover.kind === hover.kind &&
-        ((prevHover.kind !== 'sample' && prevHover.kind !== 'well') ||
-         (prevHover as { index: number }).index === (hover as { index: number }).index));
-    if (!same) state.setHoverTarget(hover);
-
-    // Mirror to legacy flags (Chunk C drops these).
-    const nearTips = hover?.kind === 'tip-rack';
-    const nearSample = hover?.kind === 'sample';
-    const activeWell = hover?.kind === 'well' ? hover.index : null;
-    if (state.isNearTips !== nearTips) state.setIsNearTips(nearTips);
-    if (state.isNearSample !== nearSample) state.setIsNearSample(nearSample);
-    if (state.activeWellIndex !== activeWell) state.setActiveWellIndex(activeWell);
-
-    // 2. Lower depth
-    const ms = holdStart.current ? performance.now() - holdStart.current : 0;
-    const lower = depthFromHoldMs(ms);
-    if (state.loweredDepth !== lower.depth) state.setLoweredDepth(lower.depth);
-    const lowered = lower.depth >= 1;
-    if (state.isLowered !== lowered) state.setIsLowered(lowered);
-
-    // 3. Failure: holding too long over a well = puncture.
-    if (lower.isPuncture && hover?.kind === 'well') {
-      state.setFailure(FailureMode.PUNCTURE);
-      holdStart.current = null;
-      return;
+    if (!hoversEqual(state.hoverTarget, hover)) {
+      state.setHoverTarget(hover);
     }
 
-    // 4. Tip pickup transition.
-    if (
-      state.step === WorkflowStep.GET_TIP &&
-      hover?.kind === 'tip-rack' &&
-      lowered &&
-      !state.hasTip
-    ) {
-      state.setHasTip(true);
-      state.setStep(WorkflowStep.INTAKE_SAMPLE);
-    }
+    // Legacy mirror for GelBox alignment ring (dies in C4).
+    const wellIdx = hover?.kind === 'well' ? hover.index : null;
+    if (state.activeWellIndex !== wellIdx) state.setActiveWellIndex(wellIdx);
   });
 
   return null;
+}
+
+/**
+ * Cheap shape-equality for HoverTarget. Avoids unnecessary store writes
+ * (which trigger re-renders of all hoverTarget subscribers).
+ */
+function hoversEqual(a: HoverTarget, b: HoverTarget): boolean {
+  if (a === null && b === null) return true;
+  if (a === null || b === null) return false;
+  if (a.kind !== b.kind) return false;
+  if (a.kind === 'sample' && b.kind === 'sample') return a.index === b.index;
+  if (a.kind === 'well' && b.kind === 'well') return a.index === b.index;
+  return true; // tip-rack and trash have no index
 }

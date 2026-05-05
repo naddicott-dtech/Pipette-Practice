@@ -3,74 +3,69 @@ import { useFrame } from '@react-three/fiber';
 import { PerspectiveCamera } from '@react-three/drei';
 import * as THREE from 'three';
 import { CAMERA } from '../sim/config';
-import { useStore } from '../store';
-import { TIP_RACK, SAMPLE_TUBES, WELLS, TRASH } from './targets';
+import { useStore, WorkflowStep } from '../store';
+import { OVERVIEW_PRESET, RUN_PRESET, actionPresetFor, type CameraPreset } from './cameraPresets';
 
-// Damping rate: ~3 time constants ≈ 95% transition.
-// lambda = 3000 / TRANSITION_MS gives the right feel for a 450 ms preset.
 const DAMP = 3000 / CAMERA.TRANSITION_MS;
 
-const overviewPos = new THREE.Vector3(...CAMERA.OVERVIEW.position);
-const closeupPos = new THREE.Vector3(...CAMERA.CLOSEUP.position);
-const overviewLook = new THREE.Vector3(...CAMERA.OVERVIEW.lookAt);
+/** When the camera is this close to the ACTION target, the lock has
+    "landed" and we can advance committing → locked. World-space distance. */
+const COMMIT_THRESHOLD = 0.6;
 
 /**
- * Single camera that animates between OVERVIEW and CLOSEUP based on
- * loweredDepth (0..1). When the player presses Space the camera leans in.
+ * Single camera that animates between three presets — OVERVIEW, ACTION,
+ * RUN — driven by the store's `step` and `interactionPhase`. The ACTION
+ * preset is computed per-target so the camera always frames the locked
+ * object, never a fixed scene origin (the C0 hotfix's lurking bug).
  *
- * The CLOSEUP lookAt tracks the current hover target (or the cursor's
- * world point as a fallback). This keeps whatever the player aimed at
- * still under the cursor as the camera zooms — without it, the target
- * scrolls off-screen mid-zoom and interactions silently fail.
- *
- * No OrbitControls — camera is locked to these two presets.
+ * Side effect: while in `committing` phase, the rig also advances the
+ * phase to `locked` once the camera position is within COMMIT_THRESHOLD
+ * world units of the ACTION target. Putting that here keeps the
+ * keyboard handler in `PlungerController` simpler — it doesn't need to
+ * own the camera tween.
  */
 export function CameraRig() {
   const ref = useRef<THREE.PerspectiveCamera>(null);
-  const lookAtRef = useRef(new THREE.Vector3().copy(overviewLook));
-  const targetPos = useRef(new THREE.Vector3());
-  const targetLook = useRef(new THREE.Vector3());
-  const closeupLook = useRef(new THREE.Vector3());
+  const lookAtRef = useRef(new THREE.Vector3(...OVERVIEW_PRESET.lookAt));
+  const tmpTargetPos = useRef(new THREE.Vector3());
+  const tmpTargetLook = useRef(new THREE.Vector3());
 
   useFrame((_, dt) => {
     const cam = ref.current;
     if (!cam) return;
+
     const state = useStore.getState();
-    const blend = state.loweredDepth;
+    const preset = pickPreset(state.step, state.interactionPhase, state.lockedTarget);
 
-    // CLOSEUP lookAt = hover target's world position, or cursor world
-    // point, or scene origin as a final fallback.
-    if (state.hoverTarget) {
-      const h = state.hoverTarget;
-      const t =
-        h.kind === 'tip-rack' ? TIP_RACK.position
-        : h.kind === 'trash' ? TRASH.position
-        : h.kind === 'sample' ? SAMPLE_TUBES[h.index].position
-        : WELLS[h.index].position;
-      closeupLook.current.set(t[0], t[1], t[2]);
-    } else if (state.pointer) {
-      closeupLook.current.set(state.pointer.x, 0, state.pointer.z);
-    } else {
-      closeupLook.current.set(0, 0, 0);
-    }
+    tmpTargetPos.current.set(...preset.position);
+    tmpTargetLook.current.set(...preset.lookAt);
 
-    targetPos.current.copy(overviewPos).lerp(closeupPos, blend);
-    targetLook.current.copy(overviewLook).lerp(closeupLook.current, blend);
-    const targetFov = THREE.MathUtils.lerp(CAMERA.OVERVIEW.fov, CAMERA.CLOSEUP.fov, blend);
+    // Damp position
+    cam.position.x = THREE.MathUtils.damp(cam.position.x, tmpTargetPos.current.x, DAMP, dt);
+    cam.position.y = THREE.MathUtils.damp(cam.position.y, tmpTargetPos.current.y, DAMP, dt);
+    cam.position.z = THREE.MathUtils.damp(cam.position.z, tmpTargetPos.current.z, DAMP, dt);
 
-    cam.position.x = THREE.MathUtils.damp(cam.position.x, targetPos.current.x, DAMP, dt);
-    cam.position.y = THREE.MathUtils.damp(cam.position.y, targetPos.current.y, DAMP, dt);
-    cam.position.z = THREE.MathUtils.damp(cam.position.z, targetPos.current.z, DAMP, dt);
-
-    lookAtRef.current.x = THREE.MathUtils.damp(lookAtRef.current.x, targetLook.current.x, DAMP, dt);
-    lookAtRef.current.y = THREE.MathUtils.damp(lookAtRef.current.y, targetLook.current.y, DAMP, dt);
-    lookAtRef.current.z = THREE.MathUtils.damp(lookAtRef.current.z, targetLook.current.z, DAMP, dt);
+    // Damp lookAt
+    lookAtRef.current.x = THREE.MathUtils.damp(lookAtRef.current.x, tmpTargetLook.current.x, DAMP, dt);
+    lookAtRef.current.y = THREE.MathUtils.damp(lookAtRef.current.y, tmpTargetLook.current.y, DAMP, dt);
+    lookAtRef.current.z = THREE.MathUtils.damp(lookAtRef.current.z, tmpTargetLook.current.z, DAMP, dt);
     cam.lookAt(lookAtRef.current);
 
-    const newFov = THREE.MathUtils.damp(cam.fov, targetFov, DAMP, dt);
+    // Damp fov
+    const newFov = THREE.MathUtils.damp(cam.fov, preset.fov, DAMP, dt);
     if (Math.abs(cam.fov - newFov) > 0.001) {
       cam.fov = newFov;
       cam.updateProjectionMatrix();
+    }
+
+    // Advance committing → locked once we've landed.
+    if (state.interactionPhase === 'committing') {
+      const dx = cam.position.x - tmpTargetPos.current.x;
+      const dy = cam.position.y - tmpTargetPos.current.y;
+      const dz = cam.position.z - tmpTargetPos.current.z;
+      if (Math.hypot(dx, dy, dz) < COMMIT_THRESHOLD) {
+        useStore.getState().setInteractionPhase('locked');
+      }
     }
   });
 
@@ -82,4 +77,18 @@ export function CameraRig() {
       fov={CAMERA.OVERVIEW.fov}
     />
   );
+}
+
+function pickPreset(
+  step: WorkflowStep,
+  phase: ReturnType<typeof useStore.getState>['interactionPhase'],
+  lockedTarget: ReturnType<typeof useStore.getState>['lockedTarget'],
+): CameraPreset {
+  if (step === WorkflowStep.RUN_GEL || step === WorkflowStep.COMPLETE) {
+    return RUN_PRESET;
+  }
+  if (phase === 'free' || lockedTarget === null) {
+    return OVERVIEW_PRESET;
+  }
+  return actionPresetFor(lockedTarget);
 }
