@@ -4,6 +4,7 @@ import { PerspectiveCamera } from '@react-three/drei';
 import * as THREE from 'three';
 import { CAMERA } from '../sim/config';
 import { useStore } from '../store';
+import { TIP_RACK, SAMPLE_TUBES, WELLS, TRASH } from './targets';
 
 // Damping rate: ~3 time constants ≈ 95% transition.
 // lambda = 3000 / TRANSITION_MS gives the right feel for a 450 ms preset.
@@ -12,11 +13,16 @@ const DAMP = 3000 / CAMERA.TRANSITION_MS;
 const overviewPos = new THREE.Vector3(...CAMERA.OVERVIEW.position);
 const closeupPos = new THREE.Vector3(...CAMERA.CLOSEUP.position);
 const overviewLook = new THREE.Vector3(...CAMERA.OVERVIEW.lookAt);
-const closeupLook = new THREE.Vector3(...CAMERA.CLOSEUP.lookAt);
 
 /**
  * Single camera that animates between OVERVIEW and CLOSEUP based on
  * loweredDepth (0..1). When the player presses Space the camera leans in.
+ *
+ * The CLOSEUP lookAt tracks the current hover target (or the cursor's
+ * world point as a fallback). This keeps whatever the player aimed at
+ * still under the cursor as the camera zooms — without it, the target
+ * scrolls off-screen mid-zoom and interactions silently fail.
+ *
  * No OrbitControls — camera is locked to these two presets.
  */
 export function CameraRig() {
@@ -24,14 +30,32 @@ export function CameraRig() {
   const lookAtRef = useRef(new THREE.Vector3().copy(overviewLook));
   const targetPos = useRef(new THREE.Vector3());
   const targetLook = useRef(new THREE.Vector3());
+  const closeupLook = useRef(new THREE.Vector3());
 
   useFrame((_, dt) => {
     const cam = ref.current;
     if (!cam) return;
-    const blend = useStore.getState().loweredDepth;
+    const state = useStore.getState();
+    const blend = state.loweredDepth;
+
+    // CLOSEUP lookAt = hover target's world position, or cursor world
+    // point, or scene origin as a final fallback.
+    if (state.hoverTarget) {
+      const h = state.hoverTarget;
+      const t =
+        h.kind === 'tip-rack' ? TIP_RACK.position
+        : h.kind === 'trash' ? TRASH.position
+        : h.kind === 'sample' ? SAMPLE_TUBES[h.index].position
+        : WELLS[h.index].position;
+      closeupLook.current.set(t[0], t[1], t[2]);
+    } else if (state.pointer) {
+      closeupLook.current.set(state.pointer.x, 0, state.pointer.z);
+    } else {
+      closeupLook.current.set(0, 0, 0);
+    }
 
     targetPos.current.copy(overviewPos).lerp(closeupPos, blend);
-    targetLook.current.copy(overviewLook).lerp(closeupLook, blend);
+    targetLook.current.copy(overviewLook).lerp(closeupLook.current, blend);
     const targetFov = THREE.MathUtils.lerp(CAMERA.OVERVIEW.fov, CAMERA.CLOSEUP.fov, blend);
 
     cam.position.x = THREE.MathUtils.damp(cam.position.x, targetPos.current.x, DAMP, dt);
