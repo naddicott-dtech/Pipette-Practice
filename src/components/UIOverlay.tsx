@@ -28,7 +28,9 @@ export function UIOverlay() {
       if (prev >= softLow && val < prev) {
         const intakeAmount = (PLUNGER.SOFT_STOP - val) / PLUNGER.SOFT_STOP;
         setLiquid(Math.min(VOLUME.FULL, liquidInTip + intakeAmount));
-        if (val === PLUNGER.REST && liquidInTip > VOLUME.FULL - 0.2) {
+        // Tolerate slight float drift on slider release; the input step is
+        // 0.01 so anything under 0.02 is "released to rest" in user terms.
+        if (val <= PLUNGER.REST + 0.02 && liquidInTip > VOLUME.FULL - 0.2) {
           setStep(WorkflowStep.LOAD_WELL);
         }
       }

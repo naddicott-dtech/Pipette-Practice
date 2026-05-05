@@ -29,7 +29,11 @@ export const SAMPLE_TUBES: IndexedTarget[] = Array.from(
   (_, i) => ({
     index: i,
     position: [SAMPLE_BASE_X + i * SAMPLE_SPACING, 0, SAMPLE_Z],
-    radius: 0.45,
+    // Hover radius (0.6) overlaps adjacent tubes' radii by design — findHover
+    // breaks ties by closer Manhattan distance, so the cursor still resolves
+    // to the correct tube. The tubes' visual cylinders remain ~0.2 wide; this
+    // is hit-target-only.
+    radius: 0.6,
   }),
 );
 
