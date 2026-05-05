@@ -558,6 +558,17 @@ is built to teach are functionally unreachable. Multi-well loading is
 unimplemented. The plunger UI vanishes the moment the player presses
 Space. We are replacing the input model.
 
+**Hotfix outcome.** PR #8 was a one-commit attempt to make the
+pre-existing input model traversable while C is being built. It moved
+the build from "first step impossible" to a **camera ↔ cursor feedback
+loop** when no target is hovered: the camera follows the cursor's
+world point, the cursor's world point is recomputed under the moved
+camera, and so on. See
+[`qa-notes/2026-05-05-02-hotfix-followup.md`](qa-notes/2026-05-05-02-hotfix-followup.md).
+We are *not* shipping another hotfix; the four findings from that
+session are rolled into the Chunk C scope below (search "Rolled in
+from hotfix follow-up").
+
 **What we keep.** The soft-stop / hard-stop pedagogy. A real
 micropipette has two distinct plunger detents and the difference
 between them is the technique we are teaching. The QA report's
@@ -793,13 +804,43 @@ between the UI and the rules.
 slightly so the player sees the pipette body and target in profile. Side view,
 ~5° isometric — exactly what the product owner asked for.
 
+**Why this design rules out the hotfix's camera ↔ cursor feedback
+loop** (rolled in from hotfix follow-up). The hotfix attempted a
+continuous lerp where `closeupLook` was driven by either the hover
+target or the *cursor's world point* as a fallback. That fallback
+created a loop: the cursor moves the camera, the cursor's world
+projection changes under the moved camera, the camera moves further.
+The redesigned rig never has that path. `ACTION.lookAt` is the
+**locked target's position**, captured at the moment of lock and
+held constant for the entire `'locked' / 'acting' / 'finishing'`
+phase. There is no per-frame "where is the cursor pointing"
+computation in the camera. When `interactionPhase === 'free'`, the
+camera is at `OVERVIEW` and the cursor doesn't influence it at all.
+The feedback loop is structurally impossible.
+
 ### Multi-well loop
 
 `activeStep` (0..3) drives:
-- which sample tube is highlighted (purple ring + bright opacity)
-- which well is highlighted (cyan ring)
+- which sample tube is the **active target** (purple ring + bright opacity)
+- which well is the **active target** (cyan ring)
 - which tubes/wells are *ghosted* (used: dashed outline, 0.4 opacity)
 - the prompt copy: "Pick up a fresh tip for **DNA 3** → Well 3"
+
+**Per-tube hover highlight that follows `findHover`** (rolled in from
+hotfix follow-up). The hotfix bumped `SAMPLE_TUBES.radius` from 0.45
+to 0.6 to make tubes easier to acquire. A side effect: the hover hit
+zone now overlaps adjacent tubes, so a cursor between DNA 1 and DNA 2
+might resolve to DNA 2. With only the active-target highlight on DNA 1,
+the player has no visual signal that they're aimed at the wrong tube.
+
+C4 adds a **second** ring style — a "live hover" ring that follows
+whichever tube `findHover` resolves to in real time. When the live
+hover matches the active target, the rings overlap (single visible
+ring). When they differ, the player sees two rings and can read the
+mismatch before locking. If the player locks on the mismatched tube,
+`WRONG_TUBE` warning fires per the rule table.
+
+The same applies to wells.
 
 Loop:
 ```
@@ -826,6 +867,33 @@ else:        step = RUN_GEL
   contaminated this lane), `missing` (no DNA loaded).
 - "Run again" button calls `reset()` and returns to OVERVIEW.
 
+### Visual fidelity (rolled in from hotfix follow-up)
+
+Two pipette-geometry corrections in `src/components/Pipette.tsx`. Both
+land in C6 because they're pure visuals with no logic interaction:
+
+1. **Liquid mesh apex points down, not up.** The yellow tip cone has
+   `rotation={[Math.PI, 0, 0]}` so its apex is at the bottom. The
+   purple liquid cone inside the tip has no rotation, so its apex is
+   at the top — a teardrop balanced on its point inside an
+   inverted cup. The fix flips the liquid (`rotation={[Math.PI, 0, 0]}`)
+   and reanchors its position so the apex stays pinned to the tip's
+   apex regardless of fill volume:
+   `position={[0, -0.3 + 0.2 * liquidInTip, 0]}`.
+2. **Disposable tip diameter matches the shaft.** Today's tip top
+   radius is 0.08 — half the shaft's bottom radius of 0.15, so the
+   tip looks like a needle pushed into a pen. Fix:
+   `coneGeometry args={[0.15, 0.9, 8]}` (base 0.15 = shaft bottom,
+   height 0.9 ≈ ⅓ of body height 3.0). Liquid base bumps to 0.13 to
+   sit just inside the new wall; max liquid height to 0.6 to fill
+   ~⅔ of the longer tip at full volume. Tip group shifts to
+   `position={[0, -1.55, 0]}` so the apex stays at the same world
+   Y as today (no impact on hit-detection or animation math
+   downstream).
+
+A teacher will spot both in two seconds. Bundle into one ~10-line
+commit since they touch the same JSX block.
+
 ### Step-by-step execution (proposed PR sequencing)
 
 Six commits, each leaves the build green. Each is its own PR for
@@ -840,7 +908,7 @@ owner can sanity-check.
 | C3 | Lock-and-act input + camera | `PlungerController`, `Prompt`, `PlungerHUD`, new `ACTION` camera preset. Slider gone. `InteractionDriver` rewritten to commit/cancel only. PUNCTURE / depth code deleted. | Major — playable with new mechanic. Single-well still. |
 | C4 | Multi-well loop + active highlights | `activeStep` consumed by `LabObjects` and `GelBox`. Tubes ghost, rings track. `WRONG_TUBE` and `NO_FRESH_TIP` warnings fire. | Multi-well sequential workflow works. |
 | C5 | Trash + discard step | `TrashBin` mesh; `DISCARD_TIP` step in workflow. | Closes the loop. |
-| C6 | RUN animation + Debrief | `Band` via `useFrame`; `runStartedAt`; `Debrief` modal; warnings → verdicts. README/title cleanup also lands here. | Production-ready end-to-end. |
+| C6 | RUN animation + Debrief + visual fidelity | `Band` via `useFrame`; `runStartedAt`; `Debrief` modal; warnings → verdicts. Pipette tip geometry corrections (matches shaft diameter; liquid mesh oriented apex-down). README/title cleanup. | Production-ready end-to-end. |
 
 ### Tests required
 
