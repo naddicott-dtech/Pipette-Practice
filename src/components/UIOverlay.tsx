@@ -53,10 +53,16 @@ export function UIOverlay() {
     }
   };
 
+  // Instruction copy for each workflow step. The DRAW_SAMPLE and
+  // DISCARD_TIP entries are placeholders during C1/C2 — the legacy
+  // mechanic still uses INTAKE_SAMPLE; C3 rewires the driver onto
+  // DRAW_SAMPLE/DISCARD_TIP and rewrites this UI alongside.
   const instructions: Record<WorkflowStep, string> = {
     [WorkflowStep.GET_TIP]: "First, pick up a fresh disposable tip. Hold SPACE to reach down and move over the yellow tips.",
     [WorkflowStep.INTAKE_SAMPLE]: "Move to the DNA tube. Hold SPACE to lower the tip. Drag the plunger to the SOFT STOP (70%), then release slowly to intake.",
+    [WorkflowStep.DRAW_SAMPLE]: "Move to the active DNA tube. Click or press Space to lock onto it.",
     [WorkflowStep.LOAD_WELL]: "Move to the gel. Hover over a well and hold SPACE to lower. Drag past the soft stop to the HARD STOP to eject DNA.",
+    [WorkflowStep.DISCARD_TIP]: "Move to the trash bin. Click or press Space to discard the used tip.",
     [WorkflowStep.RUN_GEL]: "The wells are loaded! Release SPACE and turn on the power supply to start the electrophoresis.",
     [WorkflowStep.COMPLETE]: "Simulation complete. Observe the DNA bands separating by size."
   };
