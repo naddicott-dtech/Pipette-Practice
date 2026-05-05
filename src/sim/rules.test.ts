@@ -1,57 +1,528 @@
-import { describe, it } from 'vitest';
+import { describe, it, expect } from 'vitest';
+import {
+  initialRuleState,
+  reset,
+  tryLockOnto,
+  tryCancel,
+  tryAct,
+  advanceFromFinishing,
+  applyPatch,
+  type Result,
+  type RuleEvent,
+} from './rules';
+import { startCurve, tickCurve, type PlungerCurve } from './plunger';
+import {
+  WorkflowStep,
+  type RuleState,
+  type HoverTarget,
+} from './types';
+import { PLUNGER, WORKFLOW } from './config';
 
-/**
- * Test scaffold for Chunk C — the rules layer.
- *
- * These `it.todo` markers come straight from the failure-mode table in
- * docs/fix-plan.md. They run in the test suite as "planned" entries:
- * they don't fail CI, but they do show up in the report so future work
- * has a definitive checklist.
- *
- * When implementing Chunk C: replace each `it.todo` with `it`, write the
- * body, import the rule, and assert against `Result = { nextState, events }`.
- *
- * The rule signatures (per fix-plan.md):
- *   tryPickUpTip(state, hover, lowered) → Result
- *   tryDrawSample(state, hover, plungerPath) → Result
- *   tryEjectIntoWell(state, hover, plungerPath, depth) → Result
- *   tryDiscardTip(state, hover, lowered) → Result
- */
+// ─── Test helpers ───────────────────────────────────────────────────────
 
-describe('rules.tryPickUpTip', () => {
-  it.todo('picks up a tip when over the tip rack and lowered');
-  it.todo('does nothing when not lowered');
-  it.todo('does nothing when not over the tip rack');
-  it.todo('advances workflow GET_TIP → DRAW_SAMPLE on successful pickup');
-  it.todo('does not pick up a second tip without discarding the first');
+function state(overrides: Partial<RuleState> = {}): RuleState {
+  return { ...initialRuleState(), ...overrides };
+}
+
+function curveFor(holdMs: number): PlungerCurve {
+  let c = startCurve(0);
+  c = tickCurve(c, holdMs);
+  return c;
+}
+
+const SOFT_PRESS_MS = PLUNGER.HOLD_TO_SOFT_MS + Math.floor(PLUNGER.SOFT_STOP_RESISTANCE_MS / 2);
+const HARD_PRESS_MS = PLUNGER.HOLD_TO_HARD_MS;
+const ABORTED_PRESS_MS = 100;
+
+function eventCodes(events: RuleEvent[]): string[] {
+  return events.map((e) =>
+    e.kind === 'WARN' || e.kind === 'FAIL' ? `${e.kind}:${e.code}` : e.kind,
+  );
+}
+
+// ─── tryLockOnto ────────────────────────────────────────────────────────
+
+describe('tryLockOnto', () => {
+  it('rejects null hover', () => {
+    const r = tryLockOnto(state(), null);
+    expect(r.nextState).toEqual({});
+    expect(r.events).toEqual([]);
+  });
+
+  it('rejects hover whose kind does not match the step', () => {
+    const r = tryLockOnto(state({ step: WorkflowStep.GET_TIP }), { kind: 'sample', index: 0 });
+    expect(r.nextState).toEqual({});
+  });
+
+  it('rejects locking from a non-free interaction phase', () => {
+    const r = tryLockOnto(
+      state({ interactionPhase: 'locked' }),
+      { kind: 'tip-rack' },
+    );
+    expect(r.nextState).toEqual({});
+  });
+
+  it('locks onto the tip rack during GET_TIP', () => {
+    const r = tryLockOnto(state({ step: WorkflowStep.GET_TIP }), { kind: 'tip-rack' });
+    expect(r.nextState.interactionPhase).toBe('committing');
+    expect(r.nextState.lockedTarget).toEqual({ kind: 'tip-rack' });
+  });
+
+  it('locks onto a sample tube during DRAW_SAMPLE', () => {
+    const r = tryLockOnto(
+      state({ step: WorkflowStep.DRAW_SAMPLE, hasTip: true }),
+      { kind: 'sample', index: 0 },
+    );
+    expect(r.nextState.interactionPhase).toBe('committing');
+    expect(r.nextState.lockedTarget).toEqual({ kind: 'sample', index: 0 });
+  });
+
+  it('locks onto a well during LOAD_WELL', () => {
+    const r = tryLockOnto(
+      state({ step: WorkflowStep.LOAD_WELL, hasTip: true, liquidInTip: 1 }),
+      { kind: 'well', index: 1 },
+    );
+    expect(r.nextState.interactionPhase).toBe('committing');
+    expect(r.nextState.lockedTarget).toEqual({ kind: 'well', index: 1 });
+  });
+
+  it('locks onto trash during DISCARD_TIP', () => {
+    const r = tryLockOnto(
+      state({ step: WorkflowStep.DISCARD_TIP, hasTip: true }),
+      { kind: 'trash' },
+    );
+    expect(r.nextState.interactionPhase).toBe('committing');
+    expect(r.nextState.lockedTarget).toEqual({ kind: 'trash' });
+  });
+
+  it('rejects lock during RUN_GEL (no hover kind matches)', () => {
+    const r = tryLockOnto(state({ step: WorkflowStep.RUN_GEL }), { kind: 'tip-rack' });
+    expect(r.nextState).toEqual({});
+  });
+
+  it('fires NO_TIP failure when locking onto a sample without a tip', () => {
+    const r = tryLockOnto(
+      state({ step: WorkflowStep.DRAW_SAMPLE, hasTip: false }),
+      { kind: 'sample', index: 0 },
+    );
+    expect(r.nextState.failure).toBe('NO_TIP');
+    expect(r.nextState.interactionPhase).toBe('finishing');
+    expect(r.events).toEqual([{ kind: 'FAIL', code: 'NO_TIP' }]);
+  });
+
+  it('NO_TIP is not fired when locking onto wells or tip rack without a tip', () => {
+    expect(tryLockOnto(state({ step: WorkflowStep.GET_TIP, hasTip: false }), { kind: 'tip-rack' })
+      .nextState.failure).toBeUndefined();
+  });
 });
 
-describe('rules.tryDrawSample', () => {
-  it.todo('draws sample when over the right tube, plunger crosses SOFT_STOP');
-  it.todo('NO_FRESH_TIP warning when drawing from a different tube without discarding tip');
-  it.todo('HARD_STOP_TO_DRAW failure when plunger reaches HARD_STOP while submerged');
-  it.todo('does nothing when over wrong tube for the active workflow well');
-  it.todo('NO_TIP failure when lowering into sample tube without a tip');
-  it.todo('advances workflow DRAW_SAMPLE(n) → LOAD_WELL(n) when liquid is full');
+// ─── tryCancel ──────────────────────────────────────────────────────────
+
+describe('tryCancel', () => {
+  it('returns to free from committing', () => {
+    const r = tryCancel(state({ interactionPhase: 'committing', lockedTarget: { kind: 'tip-rack' } }));
+    expect(r.nextState.interactionPhase).toBe('free');
+    expect(r.nextState.lockedTarget).toBeNull();
+  });
+
+  it('returns to free from locked', () => {
+    const r = tryCancel(state({ interactionPhase: 'locked', lockedTarget: { kind: 'tip-rack' } }));
+    expect(r.nextState.interactionPhase).toBe('free');
+    expect(r.nextState.lockedTarget).toBeNull();
+  });
+
+  it('returns to free from acting (discards in-flight press)', () => {
+    const r = tryCancel(state({ interactionPhase: 'acting', lockedTarget: { kind: 'tip-rack' } }));
+    expect(r.nextState.interactionPhase).toBe('free');
+  });
+
+  it('is a no-op from free', () => {
+    expect(tryCancel(state()).nextState).toEqual({});
+  });
+
+  it('is a no-op from finishing', () => {
+    expect(tryCancel(state({ interactionPhase: 'finishing' })).nextState).toEqual({});
+  });
 });
 
-describe('rules.tryEjectIntoWell', () => {
-  it.todo('ejects DNA when fully lowered and plunger crosses HARD_STOP');
-  it.todo('NOT_LOW_ENOUGH failure when ejecting before reaching full depth');
-  it.todo('SOFT_STOP_TO_EJECT warning when plunger stops within SOFT_STOP tolerance');
-  it.todo('partial DNA delivered on SOFT_STOP_TO_EJECT (faint band)');
-  it.todo('PUNCTURE failure already wired in InteractionDriver — no duplicate test here');
-  it.todo('advances workflow LOAD_WELL(n) → DISCARD_TIP after successful eject');
+// ─── tryAct: pickup ─────────────────────────────────────────────────────
+
+describe('tryAct (pickup, GET_TIP)', () => {
+  const base = state({
+    step: WorkflowStep.GET_TIP,
+    interactionPhase: 'acting',
+    lockedTarget: { kind: 'tip-rack' },
+  });
+
+  it('aborted press returns to free with no events', () => {
+    const r = tryAct(base, curveFor(ABORTED_PRESS_MS));
+    expect(r.nextState.interactionPhase).toBe('free');
+    expect(r.nextState.hasTip).toBeUndefined();
+    expect(r.events).toEqual([]);
+  });
+
+  it('soft press picks up a tip and advances to DRAW_SAMPLE', () => {
+    const r = tryAct(base, curveFor(SOFT_PRESS_MS));
+    expect(r.nextState.hasTip).toBe(true);
+    expect(r.nextState.interactionPhase).toBe('finishing');
+    expect(eventCodes(r.events)).toContain('STEP_ADVANCED');
+  });
+
+  it('hard press also picks up a tip (no soft/hard distinction for pickup)', () => {
+    const r = tryAct(base, curveFor(HARD_PRESS_MS));
+    expect(r.nextState.hasTip).toBe(true);
+  });
 });
 
-describe('rules.tryDiscardTip', () => {
-  it.todo('discards tip when over the trash and lowered');
-  it.todo('clears liquidInTip on discard');
-  it.todo('advances workflow DISCARD_TIP → if n<COUNT: GET_TIP else RUN_GEL');
+// ─── tryAct: draw ───────────────────────────────────────────────────────
+
+describe('tryAct (draw, DRAW_SAMPLE)', () => {
+  function drawState(overrides: Partial<RuleState> = {}): RuleState {
+    return state({
+      step: WorkflowStep.DRAW_SAMPLE,
+      hasTip: true,
+      interactionPhase: 'acting',
+      lockedTarget: { kind: 'sample', index: 0 },
+      activeStep: 0,
+      ...overrides,
+    });
+  }
+
+  it('aborted press returns to free with no liquid drawn', () => {
+    const r = tryAct(drawState(), curveFor(ABORTED_PRESS_MS));
+    expect(r.nextState.interactionPhase).toBe('free');
+    expect(r.nextState.liquidInTip).toBeUndefined();
+  });
+
+  it('soft press fills the tip and advances to LOAD_WELL', () => {
+    const r = tryAct(drawState(), curveFor(SOFT_PRESS_MS));
+    expect(r.nextState.liquidInTip).toBe(1);
+    expect(r.nextState.liquidSourceIndex).toBe(0);
+    expect(eventCodes(r.events)).toContain('STEP_ADVANCED');
+  });
+
+  it('hard press fires HARD_STOP_TO_DRAW failure (no liquid drawn)', () => {
+    const r = tryAct(drawState(), curveFor(HARD_PRESS_MS));
+    expect(r.nextState.failure).toBe('HARD_STOP_TO_DRAW');
+    expect(r.nextState.liquidInTip).toBeUndefined();
+    expect(eventCodes(r.events)).toContain('FAIL:HARD_STOP_TO_DRAW');
+  });
+
+  it('drawing from the wrong tube fires WRONG_TUBE warning but still draws', () => {
+    const r = tryAct(
+      drawState({ activeStep: 1, lockedTarget: { kind: 'sample', index: 2 } }),
+      curveFor(SOFT_PRESS_MS),
+    );
+    expect(r.nextState.liquidInTip).toBe(1);
+    expect(eventCodes(r.events)).toContain('WARN:WRONG_TUBE');
+    expect(r.nextState.warnings).toEqual([{ code: 'WRONG_TUBE', lane: 1 }]);
+  });
+
+  it('drawing from a tube already used fires NO_FRESH_TIP warning', () => {
+    const r = tryAct(
+      drawState({ activeStep: 1, usedTubes: [0], lockedTarget: { kind: 'sample', index: 0 } }),
+      curveFor(SOFT_PRESS_MS),
+    );
+    expect(eventCodes(r.events)).toContain('WARN:NO_FRESH_TIP');
+    expect(r.nextState.warnings?.[0]).toEqual({ code: 'NO_FRESH_TIP', lane: 1 });
+  });
+
+  it('records the tube as used after a successful draw', () => {
+    const r = tryAct(drawState(), curveFor(SOFT_PRESS_MS));
+    expect(r.nextState.usedTubes).toEqual([0]);
+  });
+
+  it('NO_FRESH_TIP and WRONG_TUBE can compound', () => {
+    const r = tryAct(
+      drawState({ activeStep: 2, usedTubes: [0], lockedTarget: { kind: 'sample', index: 0 } }),
+      curveFor(SOFT_PRESS_MS),
+    );
+    const codes = eventCodes(r.events);
+    expect(codes).toContain('WARN:NO_FRESH_TIP');
+    expect(codes).toContain('WARN:WRONG_TUBE');
+  });
 });
 
-describe('rules — integration / property tests', () => {
-  it.todo('full happy path: 4 wells loaded, transitions to RUN_GEL');
-  it.todo('any failure resets workflow to GET_TIP via reset()');
-  it.todo('warnings accumulate without resetting workflow');
+// ─── tryAct: eject ──────────────────────────────────────────────────────
+
+describe('tryAct (eject, LOAD_WELL)', () => {
+  function loadState(overrides: Partial<RuleState> = {}): RuleState {
+    return state({
+      step: WorkflowStep.LOAD_WELL,
+      hasTip: true,
+      liquidInTip: 1,
+      liquidSourceIndex: 0,
+      interactionPhase: 'acting',
+      lockedTarget: { kind: 'well', index: 0 },
+      activeStep: 0,
+      ...overrides,
+    });
+  }
+
+  it('aborted press returns to free with no DNA delivered', () => {
+    const r = tryAct(loadState(), curveFor(ABORTED_PRESS_MS));
+    expect(r.nextState.interactionPhase).toBe('free');
+    expect(r.nextState.dnaInWells).toBeUndefined();
+  });
+
+  it('hard press delivers full volume and advances to DISCARD_TIP', () => {
+    const r = tryAct(loadState(), curveFor(HARD_PRESS_MS));
+    expect(r.nextState.dnaInWells?.[0]).toBe(1);
+    expect(r.nextState.liquidInTip).toBe(0);
+    expect(eventCodes(r.events)).toContain('STEP_ADVANCED');
+  });
+
+  it('soft press delivers half volume and fires SOFT_STOP_TO_EJECT warning', () => {
+    const r = tryAct(loadState(), curveFor(SOFT_PRESS_MS));
+    expect(r.nextState.dnaInWells?.[0]).toBe(0.5);
+    expect(r.nextState.liquidInTip).toBe(0.5);
+    expect(eventCodes(r.events)).toContain('WARN:SOFT_STOP_TO_EJECT');
+  });
+
+  it('ejecting an empty tip fires EMPTY_EJECT failure', () => {
+    const r = tryAct(loadState({ liquidInTip: 0 }), curveFor(HARD_PRESS_MS));
+    expect(r.nextState.failure).toBe('EMPTY_EJECT');
+    expect(eventCodes(r.events)).toContain('FAIL:EMPTY_EJECT');
+  });
+
+  it('loading into the wrong well fires WRONG_TUBE warning but still delivers', () => {
+    const r = tryAct(
+      loadState({ activeStep: 1, lockedTarget: { kind: 'well', index: 2 } }),
+      curveFor(HARD_PRESS_MS),
+    );
+    expect(r.nextState.dnaInWells?.[2]).toBe(1);
+    expect(eventCodes(r.events)).toContain('WARN:WRONG_TUBE');
+  });
+
+  it('clears liquidSourceIndex when the tip empties', () => {
+    const r = tryAct(loadState(), curveFor(HARD_PRESS_MS));
+    expect(r.nextState.liquidSourceIndex).toBeNull();
+  });
+
+  it('preserves liquidSourceIndex on partial (soft) eject', () => {
+    const r = tryAct(loadState(), curveFor(SOFT_PRESS_MS));
+    expect(r.nextState.liquidSourceIndex).toBe(0); // unchanged from baseline
+  });
+});
+
+// ─── tryAct: discard ────────────────────────────────────────────────────
+
+describe('tryAct (discard, DISCARD_TIP)', () => {
+  const base = state({
+    step: WorkflowStep.DISCARD_TIP,
+    hasTip: true,
+    liquidInTip: 0.2, // residual
+    interactionPhase: 'acting',
+    lockedTarget: { kind: 'trash' },
+  });
+
+  it('aborted press returns to free without discarding', () => {
+    const r = tryAct(base, curveFor(ABORTED_PRESS_MS));
+    expect(r.nextState.hasTip).toBeUndefined();
+    expect(r.nextState.interactionPhase).toBe('free');
+  });
+
+  it('soft press discards the tip and clears residual liquid', () => {
+    const r = tryAct(base, curveFor(SOFT_PRESS_MS));
+    expect(r.nextState.hasTip).toBe(false);
+    expect(r.nextState.liquidInTip).toBe(0);
+    expect(r.nextState.liquidSourceIndex).toBeNull();
+  });
+
+  it('hard press also discards (no soft/hard distinction)', () => {
+    const r = tryAct(base, curveFor(HARD_PRESS_MS));
+    expect(r.nextState.hasTip).toBe(false);
+  });
+});
+
+// ─── advanceFromFinishing ───────────────────────────────────────────────
+
+describe('advanceFromFinishing', () => {
+  it('GET_TIP → DRAW_SAMPLE within a cycle', () => {
+    const s = state({ step: WorkflowStep.GET_TIP, interactionPhase: 'finishing' });
+    const r = advanceFromFinishing(s);
+    expect(r.nextState.step).toBe(WorkflowStep.DRAW_SAMPLE);
+    expect(r.nextState.interactionPhase).toBe('free');
+  });
+
+  it('DRAW_SAMPLE → LOAD_WELL within a cycle', () => {
+    const r = advanceFromFinishing(state({ step: WorkflowStep.DRAW_SAMPLE, interactionPhase: 'finishing' }));
+    expect(r.nextState.step).toBe(WorkflowStep.LOAD_WELL);
+  });
+
+  it('LOAD_WELL → DISCARD_TIP within a cycle', () => {
+    const r = advanceFromFinishing(state({ step: WorkflowStep.LOAD_WELL, interactionPhase: 'finishing' }));
+    expect(r.nextState.step).toBe(WorkflowStep.DISCARD_TIP);
+  });
+
+  it('DISCARD_TIP at activeStep<COUNT-1 → next cycle GET_TIP', () => {
+    const r = advanceFromFinishing(
+      state({ step: WorkflowStep.DISCARD_TIP, interactionPhase: 'finishing', activeStep: 1 }),
+    );
+    expect(r.nextState.step).toBe(WorkflowStep.GET_TIP);
+    expect(r.nextState.activeStep).toBe(2);
+    expect(eventCodes(r.events)).toEqual(['CYCLE_COMPLETE', 'STEP_ADVANCED']);
+  });
+
+  it('DISCARD_TIP at the last activeStep → RUN_GEL', () => {
+    const r = advanceFromFinishing(
+      state({ step: WorkflowStep.DISCARD_TIP, interactionPhase: 'finishing', activeStep: WORKFLOW.WELL_COUNT - 1 }),
+    );
+    expect(r.nextState.step).toBe(WorkflowStep.RUN_GEL);
+    expect(eventCodes(r.events)).toEqual(['CYCLE_COMPLETE', 'RUN_READY']);
+  });
+
+  it('is a no-op when failure is set (player must reset first)', () => {
+    const r = advanceFromFinishing(
+      state({ step: WorkflowStep.DRAW_SAMPLE, interactionPhase: 'finishing', failure: 'HARD_STOP_TO_DRAW' }),
+    );
+    expect(r.nextState).toEqual({});
+  });
+
+  it('is a no-op outside of finishing phase', () => {
+    expect(advanceFromFinishing(state({ interactionPhase: 'free' })).nextState).toEqual({});
+  });
+});
+
+// ─── reset ──────────────────────────────────────────────────────────────
+
+describe('reset', () => {
+  it('returns the canonical initial state', () => {
+    const init = reset();
+    expect(init.step).toBe(WorkflowStep.GET_TIP);
+    expect(init.activeStep).toBe(0);
+    expect(init.hasTip).toBe(false);
+    expect(init.liquidInTip).toBe(0);
+    expect(init.dnaInWells).toEqual(Array(WORKFLOW.WELL_COUNT).fill(0));
+    expect(init.usedTubes).toEqual([]);
+    expect(init.warnings).toEqual([]);
+    expect(init.failure).toBeNull();
+    expect(init.interactionPhase).toBe('free');
+    expect(init.lockedTarget).toBeNull();
+  });
+
+  it('clears a failure', () => {
+    const dirty: RuleState = { ...initialRuleState(), failure: 'HARD_STOP_TO_DRAW' };
+    const after = applyPatch(dirty, reset());
+    expect(after.failure).toBeNull();
+  });
+});
+
+// ─── Integration: happy-path multi-well ─────────────────────────────────
+
+describe('integration — happy path through 4 wells', () => {
+  function applyResult(s: RuleState, r: Result): RuleState {
+    return applyPatch(s, r.nextState);
+  }
+
+  it('completes 4 cycles ending in RUN_GEL with no failure and no warnings', () => {
+    let s: RuleState = initialRuleState();
+
+    for (let i = 0; i < WORKFLOW.WELL_COUNT; i++) {
+      const tube: HoverTarget = { kind: 'sample', index: i };
+      const well: HoverTarget = { kind: 'well', index: i };
+
+      // GET_TIP: lock → simulate camera commit → act → finish
+      s = applyResult(s, tryLockOnto(s, { kind: 'tip-rack' }));
+      s = applyPatch(s, { interactionPhase: 'acting' });
+      s = applyResult(s, tryAct(s, curveFor(SOFT_PRESS_MS)));
+      s = applyResult(s, advanceFromFinishing(s));
+      expect(s.step).toBe(WorkflowStep.DRAW_SAMPLE);
+      expect(s.hasTip).toBe(true);
+
+      // DRAW_SAMPLE
+      s = applyResult(s, tryLockOnto(s, tube));
+      s = applyPatch(s, { interactionPhase: 'acting' });
+      s = applyResult(s, tryAct(s, curveFor(SOFT_PRESS_MS)));
+      s = applyResult(s, advanceFromFinishing(s));
+      expect(s.step).toBe(WorkflowStep.LOAD_WELL);
+      expect(s.liquidInTip).toBe(1);
+
+      // LOAD_WELL
+      s = applyResult(s, tryLockOnto(s, well));
+      s = applyPatch(s, { interactionPhase: 'acting' });
+      s = applyResult(s, tryAct(s, curveFor(HARD_PRESS_MS)));
+      s = applyResult(s, advanceFromFinishing(s));
+      expect(s.step).toBe(WorkflowStep.DISCARD_TIP);
+      expect(s.dnaInWells[i]).toBe(1);
+
+      // DISCARD_TIP
+      s = applyResult(s, tryLockOnto(s, { kind: 'trash' }));
+      s = applyPatch(s, { interactionPhase: 'acting' });
+      s = applyResult(s, tryAct(s, curveFor(SOFT_PRESS_MS)));
+      s = applyResult(s, advanceFromFinishing(s));
+      expect(s.hasTip).toBe(false);
+    }
+
+    expect(s.step).toBe(WorkflowStep.RUN_GEL);
+    expect(s.failure).toBeNull();
+    expect(s.warnings).toEqual([]);
+    expect(s.dnaInWells).toEqual(Array(WORKFLOW.WELL_COUNT).fill(1));
+  });
+});
+
+// ─── Safety invariants ──────────────────────────────────────────────────
+
+describe('safety invariants', () => {
+  it('INV-2: activeStep is monotone non-decreasing across rule applications', () => {
+    let s: RuleState = initialRuleState();
+    const seen: number[] = [s.activeStep];
+    // Run 2 full cycles to bump activeStep
+    for (let i = 0; i < 2; i++) {
+      s = applyPatch(s, tryLockOnto(s, { kind: 'tip-rack' }).nextState);
+      s = applyPatch(s, { interactionPhase: 'acting' });
+      s = applyPatch(s, tryAct(s, curveFor(SOFT_PRESS_MS)).nextState);
+      s = applyPatch(s, advanceFromFinishing(s).nextState);
+      seen.push(s.activeStep);
+
+      s = applyPatch(s, tryLockOnto(s, { kind: 'sample', index: i }).nextState);
+      s = applyPatch(s, { interactionPhase: 'acting' });
+      s = applyPatch(s, tryAct(s, curveFor(SOFT_PRESS_MS)).nextState);
+      s = applyPatch(s, advanceFromFinishing(s).nextState);
+      seen.push(s.activeStep);
+
+      s = applyPatch(s, tryLockOnto(s, { kind: 'well', index: i }).nextState);
+      s = applyPatch(s, { interactionPhase: 'acting' });
+      s = applyPatch(s, tryAct(s, curveFor(HARD_PRESS_MS)).nextState);
+      s = applyPatch(s, advanceFromFinishing(s).nextState);
+      seen.push(s.activeStep);
+
+      s = applyPatch(s, tryLockOnto(s, { kind: 'trash' }).nextState);
+      s = applyPatch(s, { interactionPhase: 'acting' });
+      s = applyPatch(s, tryAct(s, curveFor(SOFT_PRESS_MS)).nextState);
+      s = applyPatch(s, advanceFromFinishing(s).nextState);
+      seen.push(s.activeStep);
+    }
+    for (let i = 1; i < seen.length; i++) {
+      expect(seen[i]).toBeGreaterThanOrEqual(seen[i - 1]);
+    }
+    expect(seen[seen.length - 1]).toBe(2); // ran 2 cycles → activeStep = 2
+  });
+
+  it('INV-3: reset() clears any failure', () => {
+    const failed = applyPatch(initialRuleState(), {
+      failure: 'HARD_STOP_TO_DRAW',
+      interactionPhase: 'finishing',
+      hasTip: true,
+    });
+    const recovered = applyPatch(failed, reset());
+    expect(recovered.failure).toBeNull();
+    expect(recovered.hasTip).toBe(false);
+    expect(recovered.interactionPhase).toBe('free');
+  });
+
+  it('INV-4: warnings is append-only across rule applications (between resets)', () => {
+    let s = initialRuleState();
+    // Lock-and-draw from wrong tube to record a WRONG_TUBE
+    s = applyPatch(s, { step: WorkflowStep.DRAW_SAMPLE, hasTip: true });
+    s = applyPatch(s, tryLockOnto(s, { kind: 'sample', index: 2 }).nextState);
+    s = applyPatch(s, { interactionPhase: 'acting' });
+    const r1 = tryAct(s, curveFor(SOFT_PRESS_MS));
+    s = applyPatch(s, r1.nextState);
+    expect(s.warnings.length).toBe(1);
+
+    // No subsequent rule strips warnings (advanceFromFinishing leaves them).
+    s = applyPatch(s, advanceFromFinishing(s).nextState);
+    expect(s.warnings.length).toBe(1);
+  });
 });

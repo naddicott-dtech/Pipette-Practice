@@ -2,13 +2,12 @@ import { create } from 'zustand';
 import { WORKFLOW } from './sim/config';
 import type { HoverTarget } from './sim/types';
 
-export enum WorkflowStep {
-  GET_TIP = 'GET_TIP',
-  INTAKE_SAMPLE = 'INTAKE_SAMPLE',
-  LOAD_WELL = 'LOAD_WELL',
-  RUN_GEL = 'RUN_GEL',
-  COMPLETE = 'COMPLETE'
-}
+// WorkflowStep is canonically defined in sim/types.ts (Chunk C). Re-exported
+// here so existing component imports (`import { WorkflowStep } from '../store'`)
+// continue to work through C1/C2. C3 may migrate consumers to import directly
+// from sim/types.
+import { WorkflowStep } from './sim/types';
+export { WorkflowStep };
 
 export enum FailureMode {
   PUNCTURE = 'PUNCTURE',
