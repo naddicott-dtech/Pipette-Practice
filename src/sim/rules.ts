@@ -47,6 +47,7 @@ export function initialRuleState(): RuleState {
     liquidInTip: 0,
     liquidSourceIndex: null,
     dnaInWells: Array(WORKFLOW.WELL_COUNT).fill(0),
+    wellSources: Array(WORKFLOW.WELL_COUNT).fill(null),
     usedTubes: [],
     warnings: [],
     failure: null,
@@ -287,11 +288,23 @@ function resolveEject(state: RuleState, outcome: PlungerOutcome): Result {
   const nextWells = [...state.dnaInWells];
   nextWells[wellIndex] = Math.min(1, nextWells[wellIndex] + delivered);
 
+  // Record which sample landed in this well. The first delivery wins —
+  // a second eject into an already-loaded well doesn't overwrite the
+  // source (the dnaInWells cap at 1 already silently drops the second
+  // sample's volume; we mirror that for the source). This keeps a
+  // mislabeled load visible on the gel as the wrong sample's pattern
+  // in the wrong slot.
+  const nextSources = [...state.wellSources];
+  if (nextSources[wellIndex] === null) {
+    nextSources[wellIndex] = state.liquidSourceIndex;
+  }
+
   events.push({ kind: 'STEP_ADVANCED', nextStep: WorkflowStep.DISCARD_TIP });
 
   return {
     nextState: {
       dnaInWells: nextWells,
+      wellSources: nextSources,
       liquidInTip: Math.max(0, state.liquidInTip - delivered),
       // If the tip is now empty, clear the source index to avoid stale data.
       liquidSourceIndex:

@@ -31,6 +31,13 @@ interface SimulationState {
   // ─── Gel + run ────────────────────────────────────────────────────────
   isBoxOn: boolean;
   dnaInWells: number[];
+  /**
+   * Per-well sample source — the index of the tube whose DNA landed in
+   * each well, or null if empty. Renders feed band patterns off this so
+   * mislabeled loads are visible (sample N → well M shows sample N's
+   * pattern in well M).
+   */
+  wellSources: (number | null)[];
   /** Wall-clock ms when RUN_GEL began; null when not running. */
   runStartedAt: number | null;
 
@@ -97,6 +104,7 @@ const INITIAL: Pick<
   | 'usedTubes'
   | 'isBoxOn'
   | 'dnaInWells'
+  | 'wellSources'
   | 'runStartedAt'
   | 'failure'
   | 'warnings'
@@ -116,6 +124,7 @@ const INITIAL: Pick<
   usedTubes: [],
   isBoxOn: false,
   dnaInWells: Array(WORKFLOW.WELL_COUNT).fill(0),
+  wellSources: Array(WORKFLOW.WELL_COUNT).fill(null),
   runStartedAt: null,
   failure: null,
   warnings: [],
@@ -160,6 +169,7 @@ export const useStore = create<SimulationState>((set) => ({
     set({
       ...INITIAL,
       dnaInWells: Array(WORKFLOW.WELL_COUNT).fill(0),
+      wellSources: Array(WORKFLOW.WELL_COUNT).fill(null),
       usedTubes: [],
       warnings: [],
       plungerCurve: emptyCurve(),
@@ -179,6 +189,7 @@ export function selectRuleState(state: SimulationState): RuleState {
     liquidInTip: state.liquidInTip,
     liquidSourceIndex: state.liquidSourceIndex,
     dnaInWells: state.dnaInWells,
+    wellSources: state.wellSources,
     usedTubes: state.usedTubes,
     warnings: state.warnings,
     failure: state.failure,

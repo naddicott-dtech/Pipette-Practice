@@ -408,6 +408,50 @@ describe('tryAct (eject, LOAD_WELL)', () => {
     const r = tryAct(loadState(), curveFor(SOFT_PRESS_MS));
     expect(r.nextState.liquidSourceIndex).toBe(0);
   });
+
+  it('records the source sample in wellSources[wellIndex]', () => {
+    // liquidSourceIndex starts at 0 (= sample 0). A correct load into
+    // well 0 records sample 0 as the well's source.
+    const r = tryAct(loadState(), curveFor(HARD_PRESS_MS));
+    expect(r.nextState.wellSources).toBeDefined();
+    expect(r.nextState.wellSources?.[0]).toBe(0);
+  });
+
+  it('mislabel records the SAMPLE in the wrong-well slot', () => {
+    // Player drew DNA-1 (sample 0) but loaded into well 2 (the wrong
+    // slot for cycle activeStep=1). wellSources[2] should be 0 — the
+    // gel will render sample 0's pattern in well 2, NOT well 2's
+    // expected pattern.
+    const r = tryAct(
+      loadState({
+        activeStep: 1,
+        liquidSourceIndex: 0,
+        lockedTarget: { kind: 'well', index: 2 },
+      }),
+      curveFor(HARD_PRESS_MS),
+    );
+    expect(r.nextState.wellSources?.[2]).toBe(0);
+  });
+
+  it('does not overwrite an already-loaded well (first delivery wins)', () => {
+    // The dnaInWells cap at 1 silently drops a second load's volume;
+    // wellSources mirrors that — the FIRST sample to land in a well
+    // owns its identity. Otherwise the gel could "flip" mid-run.
+    const prefilled = [...Array(WORKFLOW.WELL_COUNT).fill(null)] as
+      (number | null)[];
+    prefilled[2] = 1; // sample 1 already there
+    const r = tryAct(
+      loadState({
+        activeStep: 1,
+        liquidSourceIndex: 0,
+        lockedTarget: { kind: 'well', index: 2 },
+        wellSources: prefilled,
+        dnaInWells: [0, 0, 1, 0],
+      }),
+      curveFor(HARD_PRESS_MS),
+    );
+    expect(r.nextState.wellSources?.[2]).toBe(1); // unchanged
+  });
 });
 
 // ─── tryAct: routing ────────────────────────────────────────────────────
@@ -544,6 +588,7 @@ describe('reset', () => {
     expect(init.hasTip).toBe(false);
     expect(init.liquidInTip).toBe(0);
     expect(init.dnaInWells).toEqual(Array(WORKFLOW.WELL_COUNT).fill(0));
+    expect(init.wellSources).toEqual(Array(WORKFLOW.WELL_COUNT).fill(null));
     expect(init.usedTubes).toEqual([]);
     expect(init.warnings).toEqual([]);
     expect(init.failure).toBeNull();
@@ -613,6 +658,9 @@ describe('integration — happy path through 4 wells', () => {
     expect(s.failure).toBeNull();
     expect(s.warnings).toEqual([]);
     expect(s.dnaInWells).toEqual(Array(WORKFLOW.WELL_COUNT).fill(1));
+    // After the happy path, wellSources should be the identity:
+    // sample i landed in well i for every cycle.
+    expect(s.wellSources).toEqual(Array.from({ length: WORKFLOW.WELL_COUNT }, (_, i) => i));
   });
 });
 
