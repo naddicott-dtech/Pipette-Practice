@@ -262,6 +262,12 @@ function Well({ id, x, y, z, isBoxOn }: WellProps) {
  * from the store inside the frame loop (not as a hook subscription) so
  * each frame produces a fresh `now - runStartedAt` without re-rendering
  * the whole `Well` subtree on every store mutation.
+ *
+ * Position is set fully imperatively — no JSX `position` prop. R3F
+ * re-applies array-literal position props on every parent re-render,
+ * and the parent `Well` subscribes to `hoverTarget` (changes on every
+ * cursor move) and `descentMs` (frequent during LOAD_WELL). Without
+ * the imperative-only path, bands could get reset to x=0 mid-run.
  */
 function Band({ offset }: { offset: number }) {
   const meshRef = useRef<THREE.Mesh>(null);
@@ -269,6 +275,7 @@ function Band({ offset }: { offset: number }) {
   useFrame(() => {
     const m = meshRef.current;
     if (!m) return;
+    m.position.y = -0.05;
     const startedAt = useStore.getState().runStartedAt;
     if (startedAt === null) {
       m.position.x = 0;
@@ -279,9 +286,19 @@ function Band({ offset }: { offset: number }) {
   });
 
   return (
-    <mesh ref={meshRef} position={[0, -0.05, 0]}>
-      <boxGeometry args={[0.1, 0.02, 0.7]} />
-      <meshStandardMaterial color="#4c1d95" opacity={0.8} transparent />
+    <mesh ref={meshRef}>
+      {/* Slightly thicker on Y and emissive so bands read clearly
+          through the buffer chamber's transparent front wall — the
+          front-most lanes were rendering correctly but visually
+          getting lost in the depth-sorted transparency stack. */}
+      <boxGeometry args={[0.12, 0.04, 0.7]} />
+      <meshStandardMaterial
+        color="#7c3aed"
+        emissive="#4c1d95"
+        emissiveIntensity={0.5}
+        opacity={0.95}
+        transparent
+      />
     </mesh>
   );
 }
