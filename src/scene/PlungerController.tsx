@@ -1,10 +1,13 @@
 import React, { useEffect, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { useStore, selectRuleState } from '../store';
+import { useStore, selectRuleState, WorkflowStep } from '../store';
 import {
   tryLockOnto,
   tryCancel,
   tryAct,
+  tryTapPickup,
+  tryTapDiscard,
+  tryStopDescent,
   advanceFromFinishing,
   type Result,
 } from '../sim/rules';
@@ -14,34 +17,93 @@ import { playSoftStopClick } from '../audio/click';
 
 /**
  * Owns all input → state-machine wiring for the lock-and-act mechanic.
- * Listens for Space (commit + plunger), Esc (cancel), and mouse-down on
- * the canvas (alternate commit). Per-frame, advances the plunger curve
- * during 'acting' and progresses 'finishing' → 'free' after the
- * finishing animation window elapses.
  *
- * Diverges slightly from the plan's prose: the plan described
- * commit/cancel as InteractionDriver's responsibility and plunger as
- * PlungerController's. Putting both in one component avoids dual
- * keyboard listeners and gets us a single source of truth for the
- * Space key — the rest of the app sees only the resulting store
- * patches.
+ * Routing per (phase, step):
+ *   free                   Space-down/click → tryLockOnto
+ *   committing             ignore (camera tween in progress)
+ *   descending (LOAD_WELL) Space-down → tryStopDescent;
+ *                          frame loop auto-fires PUNCTURE at AUTO_PUNCTURE_MS
+ *   locked  + GET_TIP      triple-tap; window timeout with count=1 fires
+ *                          forgiving LOOSE_TIP pickup, count=2 resets
+ *   locked  + DISCARD_TIP  single-tap eject (tryTapDiscard)
+ *   locked  + DRAW_SAMPLE  Space-down starts plunger curve; release → tryAct
+ *   locked  + LOAD_WELL    same, post-descent
+ *   finishing              wait FINISHING_ANIMATION_MS, advance
  */
 export function PlungerController() {
-  // The Space key's current physical state, so we don't double-fire on
-  // OS auto-repeat keydowns.
   const spaceDown = useRef(false);
-  // Tracks the soft-stop crossing within a single press, so the audio
-  // click fires exactly once. Cleared whenever phase leaves 'acting'.
   const clickedThisPress = useRef(false);
-  // performance.now() when phase entered 'finishing'; used to time the
-  // animation window before calling advanceFromFinishing.
   const finishingEnteredAt = useRef<number | null>(null);
+  // Wall-clock ms when 'descending' began.
+  const descentStartedAt = useRef<number | null>(null);
+  // Wall-clock ms of the most recent tap during locked GET_TIP. Drives the
+  // tap-window timeout — null when no tap has landed in the current lock.
+  const lastTapAt = useRef<number | null>(null);
 
-  // ─── Keyboard + mouse ───────────────────────────────────────────────
   useEffect(() => {
+    function commitOrPress() {
+      const state = useStore.getState();
+      const phase = state.interactionPhase;
+      const step = state.step;
+      const now = performance.now();
+
+      if (phase === 'free') {
+        applyResult(state, tryLockOnto(selectRuleState(state), state.hoverTarget));
+        return;
+      }
+      if (phase === 'descending') {
+        applyResult(state, tryStopDescent(selectRuleState(state), state.descentMs));
+        return;
+      }
+      if (phase === 'locked') {
+        if (step === WorkflowStep.GET_TIP) {
+          const newCount = state.tapCount + 1;
+          state.setTapCount(newCount);
+          lastTapAt.current = now;
+          if (newCount >= WORKFLOW.TAP_TARGET_COUNT) {
+            applyResult(
+              state,
+              tryTapPickup(selectRuleState({ ...state, tapCount: newCount }), true),
+            );
+            lastTapAt.current = null;
+          }
+          return;
+        }
+        if (step === WorkflowStep.DISCARD_TIP) {
+          applyResult(state, tryTapDiscard(selectRuleState(state)));
+          return;
+        }
+        // DRAW_SAMPLE / LOAD_WELL — start the plunger press.
+        state.setPlungerCurve(startCurve(now));
+        state.setInteractionPhase('acting');
+      }
+      // committing / acting / finishing: ignore.
+    }
+
+    function release() {
+      const state = useStore.getState();
+      if (state.interactionPhase !== 'acting') return;
+      applyResult(state, tryAct(selectRuleState(state), state.plungerCurve));
+    }
+
+    function cancel() {
+      const state = useStore.getState();
+      const phase = state.interactionPhase;
+      if (
+        phase === 'committing' ||
+        phase === 'descending' ||
+        phase === 'locked' ||
+        phase === 'acting'
+      ) {
+        applyResult(state, tryCancel(selectRuleState(state)));
+        state.setPlungerCurve(emptyCurve());
+        lastTapAt.current = null;
+      }
+    }
+
     function onKeyDown(e: KeyboardEvent) {
       if (e.code === 'Space') {
-        if (spaceDown.current) return; // ignore OS auto-repeat
+        if (spaceDown.current) return;
         spaceDown.current = true;
         e.preventDefault();
         commitOrPress();
@@ -58,21 +120,12 @@ export function PlungerController() {
       }
     }
     function onBlur() {
-      // Window lost focus — treat as Space-up so we don't get stuck in
-      // 'acting' with a half-pressed plunger.
       if (spaceDown.current) {
         spaceDown.current = false;
         release();
       }
     }
     function onMouseDown(e: MouseEvent) {
-      // Click commits a lock from `free`. The plunger press is Space-only
-      // for now — mouse-down ignored when already locked because there's
-      // no symmetric mouse-up wired to release. (Adding a dedicated
-      // "hold to draw" button in PlungerHUD with matched onMouseDown /
-      // onMouseUp handlers is a future improvement; canvas-wide
-      // mouse-down for the press would let the user start a press they
-      // can't release.)
       const target = e.target as HTMLElement | null;
       if (target?.closest('button, input, [role="button"]')) return;
       if (useStore.getState().interactionPhase === 'free') commitOrPress();
@@ -89,14 +142,20 @@ export function PlungerController() {
     };
   }, []);
 
-  // ─── Frame loop ──────────────────────────────────────────────────────
   useFrame(() => {
     const state = useStore.getState();
     const phase = state.interactionPhase;
 
-    // Reset the soft-stop click latch whenever we leave the 'acting'
-    // phase. This way the next press fires exactly one click.
     if (phase !== 'acting') clickedThisPress.current = false;
+    if (phase !== 'descending' && descentStartedAt.current !== null) {
+      descentStartedAt.current = null;
+    }
+    if (
+      (phase !== 'locked' || state.step !== WorkflowStep.GET_TIP) &&
+      lastTapAt.current !== null
+    ) {
+      lastTapAt.current = null;
+    }
 
     if (phase === 'acting') {
       const now = performance.now();
@@ -112,12 +171,40 @@ export function PlungerController() {
         playSoftStopClick();
       }
 
-      // Only push when something changed — avoids waking subscribers.
       if (
         ticked.currentMs !== prevCurve.currentMs ||
         ticked.peakDepth !== prevCurve.peakDepth
       ) {
         state.setPlungerCurve(ticked);
+      }
+    }
+
+    if (phase === 'descending') {
+      const now = performance.now();
+      if (descentStartedAt.current === null) descentStartedAt.current = now;
+      const elapsed = now - descentStartedAt.current;
+      if (elapsed !== state.descentMs) state.setDescentMs(elapsed);
+
+      if (elapsed >= WORKFLOW.DESCENT.AUTO_PUNCTURE_MS) {
+        applyResult(state, tryStopDescent(selectRuleState(state), elapsed));
+      }
+    }
+
+    if (
+      phase === 'locked' &&
+      state.step === WorkflowStep.GET_TIP &&
+      lastTapAt.current !== null &&
+      state.tapCount > 0 &&
+      state.tapCount < WORKFLOW.TAP_TARGET_COUNT
+    ) {
+      const now = performance.now();
+      if (now - lastTapAt.current >= WORKFLOW.TAP_WINDOW_MS) {
+        if (state.tapCount === 1) {
+          applyResult(state, tryTapPickup(selectRuleState(state), false));
+        } else {
+          state.setTapCount(0);
+        }
+        lastTapAt.current = null;
       }
     }
 
@@ -129,19 +216,10 @@ export function PlungerController() {
         WORKFLOW.FINISHING_ANIMATION_MS
       ) {
         finishingEnteredAt.current = null;
-        // No-op on failures (modal blocks until reset). Otherwise advances
-        // the workflow per the canonical transition table.
-        const result = advanceFromFinishing(selectRuleState(state));
-        applyResult(state, result);
-        // Curve resets for the next lock-and-act cycle. The HUD has
-        // already been hidden (phase moved off 'finishing' inside
-        // applyResult) — clearing the curve avoids a stale peak flash
-        // when the player next reaches 'locked'.
+        applyResult(state, advanceFromFinishing(selectRuleState(state)));
         state.setPlungerCurve(emptyCurve());
       }
     } else if (finishingEnteredAt.current !== null) {
-      // Phase changed away from finishing without us advancing it
-      // (e.g. via reset() from the failure modal). Clear tracker.
       finishingEnteredAt.current = null;
     }
   });
@@ -149,46 +227,9 @@ export function PlungerController() {
   return null;
 }
 
-// ─── Input handlers — read store directly, dispatch via rules ───────────
-
-function commitOrPress() {
-  const state = useStore.getState();
-  if (state.interactionPhase === 'free') {
-    const result = tryLockOnto(selectRuleState(state), state.hoverTarget);
-    applyResult(state, result);
-  } else if (state.interactionPhase === 'locked') {
-    state.setPlungerCurve(startCurve(performance.now()));
-    state.setInteractionPhase('acting');
-  }
-  // committing / acting / finishing: ignore further commit-like input.
-}
-
-function release() {
-  const state = useStore.getState();
-  if (state.interactionPhase !== 'acting') return;
-  const result = tryAct(selectRuleState(state), state.plungerCurve);
-  applyResult(state, result);
-  // Curve stays put through 'finishing' so the HUD can show the peak.
-}
-
-function cancel() {
-  const state = useStore.getState();
-  if (
-    state.interactionPhase === 'committing' ||
-    state.interactionPhase === 'locked' ||
-    state.interactionPhase === 'acting'
-  ) {
-    const result = tryCancel(selectRuleState(state));
-    applyResult(state, result);
-    state.setPlungerCurve(emptyCurve());
-  }
-}
-
 function applyResult(
   state: ReturnType<typeof useStore.getState>,
   result: Result,
 ): void {
   state.applyRulePatch(result.nextState);
-  // Hook for future side-effects keyed off events (warning sound cues, etc.).
-  // for (const ev of result.events) { ... }
 }

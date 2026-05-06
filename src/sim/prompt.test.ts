@@ -8,6 +8,7 @@ function input(overrides: Partial<PromptInput>): PromptInput {
     interactionPhase: 'free',
     hoverTarget: null,
     activeStep: 0,
+    tapCount: 0,
     ...overrides,
   };
 }
@@ -81,6 +82,14 @@ describe('resolvePrompt — non-free phases', () => {
     expect(r.tone).toBe('progress');
   });
 
+  it('descending tells the player to press Space to stop the tip', () => {
+    const r = resolvePrompt(
+      input({ step: WorkflowStep.LOAD_WELL, interactionPhase: 'descending' }),
+    );
+    expect(r.text).toMatch(/stop the tip/i);
+    expect(r.detail).toMatch(/buffer|punctures/i);
+  });
+
   it('locked DRAW_SAMPLE tells the user to release at the click', () => {
     const r = resolvePrompt(
       input({ step: WorkflowStep.DRAW_SAMPLE, interactionPhase: 'locked' }),
@@ -110,20 +119,25 @@ describe('resolvePrompt — non-free phases', () => {
     expect(r.tone).toBe('silent');
   });
 
-  it('locked GET_TIP tells the user to hold for pickup', () => {
+  it('locked GET_TIP tells the user to triple-tap', () => {
     const r = resolvePrompt(
       input({ step: WorkflowStep.GET_TIP, interactionPhase: 'locked' }),
     );
-    expect(r.text).toMatch(/hold space/i);
-    expect(r.text).toMatch(/tip/i);
+    expect(r.text).toMatch(/tap space 3 times/i);
   });
 
-  it('locked DISCARD_TIP tells the user to hold for discard', () => {
+  it('locked GET_TIP with tapCount in progress shows progress hint', () => {
+    const r = resolvePrompt(
+      input({ step: WorkflowStep.GET_TIP, interactionPhase: 'locked', tapCount: 2 }),
+    );
+    expect(r.detail).toMatch(/2 of 3 taps/i);
+  });
+
+  it('locked DISCARD_TIP tells the user to press Space to eject', () => {
     const r = resolvePrompt(
       input({ step: WorkflowStep.DISCARD_TIP, interactionPhase: 'locked' }),
     );
-    expect(r.text).toMatch(/hold space/i);
-    expect(r.text).toMatch(/discard/i);
+    expect(r.text).toMatch(/press space.*eject/i);
   });
 
   it('acting LOAD_WELL tells the user to press past the click', () => {
@@ -133,15 +147,6 @@ describe('resolvePrompt — non-free phases', () => {
     expect(r.text).toMatch(/dispens/i);
     expect(r.detail).toMatch(/past the click/i);
     expect(r.tone).toBe('progress');
-  });
-
-  it('acting GET_TIP and DISCARD_TIP show a generic "Pressing…"', () => {
-    expect(
-      resolvePrompt(input({ step: WorkflowStep.GET_TIP, interactionPhase: 'acting' })).text,
-    ).toMatch(/pressing/i);
-    expect(
-      resolvePrompt(input({ step: WorkflowStep.DISCARD_TIP, interactionPhase: 'acting' })).text,
-    ).toMatch(/pressing/i);
   });
 
   it('LOAD_WELL pointing at the active well has no warning detail', () => {
@@ -156,4 +161,3 @@ describe('resolvePrompt — non-free phases', () => {
     expect(r.detail).toBeUndefined();
   });
 });
-

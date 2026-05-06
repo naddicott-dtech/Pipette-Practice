@@ -58,13 +58,16 @@ export function CameraRig() {
       cam.updateProjectionMatrix();
     }
 
-    // Advance committing → locked once we've landed.
+    // Advance committing → locked (or → descending for LOAD_WELL) once
+    // the camera has landed on its target.
     if (state.interactionPhase === 'committing') {
       const dx = cam.position.x - tmpTargetPos.current.x;
       const dy = cam.position.y - tmpTargetPos.current.y;
       const dz = cam.position.z - tmpTargetPos.current.z;
       if (Math.hypot(dx, dy, dz) < COMMIT_THRESHOLD) {
-        useStore.getState().setInteractionPhase('locked');
+        const next =
+          state.step === WorkflowStep.LOAD_WELL ? 'descending' : 'locked';
+        useStore.getState().setInteractionPhase(next);
       }
     }
   });

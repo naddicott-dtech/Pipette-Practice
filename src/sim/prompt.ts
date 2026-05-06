@@ -13,6 +13,8 @@ export interface PromptInput {
   hoverTarget: HoverTarget;
   /** 0..WELL_COUNT-1; the lane the player is currently working on. */
   activeStep: number;
+  /** Tap counter (locked GET_TIP). 0 elsewhere. */
+  tapCount?: number;
 }
 
 export interface PromptCopy {
@@ -32,9 +34,8 @@ function laneLabel(index: number): string {
 }
 
 export function resolvePrompt(input: PromptInput): PromptCopy {
-  const { step, interactionPhase, hoverTarget, activeStep } = input;
+  const { step, interactionPhase, hoverTarget, activeStep, tapCount = 0 } = input;
 
-  // Run / complete phases short-circuit; the action is a button, not a lock.
   if (step === WorkflowStep.RUN_GEL && interactionPhase === 'free') {
     return {
       text: 'Press Start Power Supply to run the gel.',
@@ -53,8 +54,14 @@ export function resolvePrompt(input: PromptInput): PromptCopy {
       return resolveFree(step, hoverTarget, activeStep);
     case 'committing':
       return { text: 'Locking on…', tone: 'progress' };
+    case 'descending':
+      return {
+        text: 'Press Space to stop the tip in the well.',
+        detail: 'Stop too high → tip dispenses into buffer. Stop too late → punctures the gel.',
+        tone: 'instruct',
+      };
     case 'locked':
-      return resolveLocked(step);
+      return resolveLocked(step, tapCount);
     case 'acting':
       return resolveActing(step);
     case 'finishing':
@@ -114,10 +121,17 @@ function resolveFree(step: WS, hover: HoverTarget, activeStep: number): PromptCo
   }
 }
 
-function resolveLocked(step: WS): PromptCopy {
+function resolveLocked(step: WS, tapCount: number): PromptCopy {
   switch (step) {
     case WorkflowStep.GET_TIP:
-      return { text: 'Hold Space to pick up the tip.', tone: 'instruct' };
+      return {
+        text: `Tap Space 3 times quickly to seat the tip.`,
+        detail:
+          tapCount > 0
+            ? `${tapCount} of 3 taps — keep tapping.`
+            : "Lawrence Livermore standard: tap-tap-tap. One tap is forgiven but warned.",
+        tone: 'instruct',
+      };
     case WorkflowStep.DRAW_SAMPLE:
       return {
         text: 'Hold Space to draw.',
@@ -131,7 +145,11 @@ function resolveLocked(step: WS): PromptCopy {
         tone: 'instruct',
       };
     case WorkflowStep.DISCARD_TIP:
-      return { text: 'Hold Space to discard the tip.', tone: 'instruct' };
+      return {
+        text: 'Press Space to eject the tip.',
+        detail: 'A real pipette has a separate eject button — one press, tip drops.',
+        tone: 'instruct',
+      };
     case WorkflowStep.RUN_GEL:
     case WorkflowStep.COMPLETE:
       return SILENT;
@@ -154,7 +172,9 @@ function resolveActing(step: WS): PromptCopy {
       };
     case WorkflowStep.GET_TIP:
     case WorkflowStep.DISCARD_TIP:
-      return { text: 'Pressing…', tone: 'progress' };
+      // Tap-driven steps don't enter 'acting'; the prompt component
+      // shouldn't reach this branch in practice.
+      return SILENT;
     case WorkflowStep.RUN_GEL:
     case WorkflowStep.COMPLETE:
       return SILENT;

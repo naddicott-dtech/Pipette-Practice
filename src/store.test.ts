@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useStore, selectRuleState, WorkflowStep } from './store';
 import { WORKFLOW } from './sim/config';
-import { initialRuleState, tryAct } from './sim/rules';
+import { initialRuleState, tryTapPickup } from './sim/rules';
 import { startCurve, tickCurve } from './sim/plunger';
 import type { RuleState } from './sim/types';
 
@@ -140,6 +140,8 @@ describe('Store — reset', () => {
     s.setLockedTarget({ kind: 'tip-rack' });
     s.setRunStartedAt(9999);
     s.setPlungerCurve(startCurve(0));
+    s.setDescentMs(500);
+    s.setTapCount(2);
 
     s.reset();
 
@@ -153,6 +155,8 @@ describe('Store — reset', () => {
     expect(after.lockedTarget).toBeNull();
     expect(after.runStartedAt).toBeNull();
     expect(after.plungerCurve.startMs).toBeNull();
+    expect(after.descentMs).toBe(0);
+    expect(after.tapCount).toBe(0);
   });
 
   it('reset returns fresh array references (no shared state with prior collections)', () => {
@@ -256,10 +260,9 @@ describe('Store — round-trip rule application', () => {
     const s = useStore.getState();
     s.setStep(WorkflowStep.GET_TIP);
     s.setLockedTarget({ kind: 'tip-rack' });
-    s.setInteractionPhase('acting');
+    s.setInteractionPhase('locked');
 
-    const curve = tickCurve(startCurve(0), 600);
-    const result = tryAct(selectRuleState(useStore.getState()), curve);
+    const result = tryTapPickup(selectRuleState(useStore.getState()), true);
     useStore.getState().applyRulePatch(result.nextState);
 
     const after = selectRuleState(useStore.getState());

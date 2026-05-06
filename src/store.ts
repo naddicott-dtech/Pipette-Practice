@@ -46,6 +46,10 @@ interface SimulationState {
   lockedTarget: LockTarget | null;
   /** In-flight plunger press. */
   plungerCurve: PlungerCurve;
+  /** ms elapsed in the LOAD_WELL `descending` sub-phase. */
+  descentMs: number;
+  /** Tap counter for tap-driven actions (GET_TIP, DISCARD_TIP). */
+  tapCount: number;
 
   // ─── Cursor + hover ───────────────────────────────────────────────────
   pointer: { x: number; z: number } | null;
@@ -72,6 +76,8 @@ interface SimulationState {
   setInteractionPhase: (phase: InteractionPhase) => void;
   setLockedTarget: (t: LockTarget | null) => void;
   setPlungerCurve: (curve: PlungerCurve) => void;
+  setDescentMs: (ms: number) => void;
+  setTapCount: (n: number) => void;
   /**
    * Apply a `Result.nextState` patch from a rules.ts function. RuleState
    * keys map 1:1 to store keys.
@@ -104,6 +110,8 @@ const INITIAL: Pick<
   | 'interactionPhase'
   | 'lockedTarget'
   | 'plungerCurve'
+  | 'descentMs'
+  | 'tapCount'
   | 'activeWellIndex'
   | 'pointer'
   | 'hoverTarget'
@@ -122,6 +130,8 @@ const INITIAL: Pick<
   interactionPhase: 'free',
   lockedTarget: null,
   plungerCurve: emptyCurve(),
+  descentMs: 0,
+  tapCount: 0,
   activeWellIndex: null,
   pointer: null,
   hoverTarget: null,
@@ -150,6 +160,8 @@ export const useStore = create<SimulationState>((set) => ({
   setInteractionPhase: (interactionPhase) => set({ interactionPhase }),
   setLockedTarget: (lockedTarget) => set({ lockedTarget }),
   setPlungerCurve: (plungerCurve) => set({ plungerCurve }),
+  setDescentMs: (descentMs) => set({ descentMs }),
+  setTapCount: (tapCount) => set({ tapCount }),
   applyRulePatch: (patch) => set(patch),
   setActiveWellIndex: (activeWellIndex) => set({ activeWellIndex }),
   setPointer: (pointer) => set({ pointer }),
@@ -182,6 +194,8 @@ export function selectRuleState(state: SimulationState): RuleState {
     failure: state.failure,
     interactionPhase: state.interactionPhase,
     lockedTarget: state.lockedTarget,
+    descentMs: state.descentMs,
+    tapCount: state.tapCount,
   };
 }
 

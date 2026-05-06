@@ -13,17 +13,22 @@ export type LockTarget = Exclude<HoverTarget, null>;
 /**
  * Inner-loop interaction phase. Independent of the outer `WorkflowStep`.
  *
- *   free       cursor moves the pipette; no commitment
- *   committing camera tweening to ACTION on the locked target
- *   locked     pipette anchored, plunger HUD visible, awaiting press
- *   acting     plunger is being depressed; plungerCurve advances
- *   finishing  rule has fired; success/warning animation plays out
- *
- * The driver moves the phase in response to events; rules return
- * `nextState.interactionPhase` patches per the canonical transition
- * table in docs/fix-plan.md.
+ *   free        cursor moves the pipette; no commitment
+ *   committing  camera tweening to ACTION on the locked target
+ *   descending  LOAD_WELL only: tip is lowering toward the well; player
+ *               presses Space to stop. Three depth zones produce
+ *               NOT_LOW_ENOUGH / good / PUNCTURE outcomes.
+ *   locked      pipette anchored, plunger HUD visible, awaiting press
+ *   acting      plunger is being depressed; plungerCurve advances
+ *   finishing   rule has fired; success/warning animation plays out
  */
-export type InteractionPhase = 'free' | 'committing' | 'locked' | 'acting' | 'finishing';
+export type InteractionPhase =
+  | 'free'
+  | 'committing'
+  | 'descending'
+  | 'locked'
+  | 'acting'
+  | 'finishing';
 
 /**
  * Outer workflow step. Canonical home as of Chunk C; `store.ts`
@@ -38,11 +43,26 @@ export enum WorkflowStep {
   COMPLETE = 'COMPLETE',
 }
 
-/** Active failure modes per the Decision Log (2026-05-05). */
-export type FailureCode = 'NO_TIP' | 'HARD_STOP_TO_DRAW' | 'EMPTY_EJECT';
+/**
+ * Active failure modes. Decision Log 2026-05-05 retired NOT_LOW_ENOUGH
+ * and PUNCTURE; the 2026-05-06 follow-up reactivated them, scoped to the
+ * LOAD_WELL `descending` sub-phase only (see docs/followup-2026-05-06.md).
+ * SHORT_DRAW also added in that follow-up.
+ */
+export type FailureCode =
+  | 'NO_TIP'
+  | 'HARD_STOP_TO_DRAW'
+  | 'EMPTY_EJECT'
+  | 'SHORT_DRAW'
+  | 'NOT_LOW_ENOUGH'
+  | 'PUNCTURE';
 
-/** Active warning modes per the Decision Log (2026-05-05). */
-export type WarningCode = 'SOFT_STOP_TO_EJECT' | 'NO_FRESH_TIP' | 'WRONG_TUBE';
+/** Active warning modes. LOOSE_TIP added in the 2026-05-06 follow-up. */
+export type WarningCode =
+  | 'SOFT_STOP_TO_EJECT'
+  | 'NO_FRESH_TIP'
+  | 'WRONG_TUBE'
+  | 'LOOSE_TIP';
 
 /** A warning recorded against a specific lane (well index). */
 export interface WarningRecord {
@@ -74,4 +94,15 @@ export interface RuleState {
   interactionPhase: InteractionPhase;
   /** Target captured at lock time, held through finishing. */
   lockedTarget: LockTarget | null;
+  /**
+   * ms elapsed in the LOAD_WELL `descending` sub-phase. Driven by the
+   * controller; rules read it via tryStopDescent. 0 outside descending.
+   */
+  descentMs: number;
+  /**
+   * Tap counter for tap-driven actions (GET_TIP triple-tap, DISCARD_TIP
+   * single-tap). Driven by the controller; rules read it via tryTapPickup.
+   * 0 outside the relevant locked phases.
+   */
+  tapCount: number;
 }
