@@ -211,10 +211,14 @@ function resolveDraw(state: RuleState, outcome: PlungerOutcome): Result {
     };
   }
 
-  // Successful draw at the soft stop. Fire warnings for tube reuse or
-  // wrong-tube selection BEFORE state mutation so the events list is
-  // ordered: warnings first, then STEP_ADVANCED.
+  // Successful draw (soft or overshoot). For overshoot the volume is
+  // still drawn — the player did seal the air column past the click,
+  // they just took up more than intended. Fire OVERDRAW so the player
+  // gets a signal matching the PlungerHUD's red zone.
   const events: RuleEvent[] = [];
+  if (outcome === 'overshoot') {
+    events.push({ kind: 'WARN', code: 'OVERDRAW' });
+  }
   if (state.usedTubes.includes(tubeIndex)) {
     events.push({ kind: 'WARN', code: 'NO_FRESH_TIP' });
   }
@@ -286,9 +290,17 @@ function resolveEject(state: RuleState, outcome: PlungerOutcome): Result {
     newWarnings.push({ code: 'WRONG_TUBE', lane: wellIndex });
   }
 
-  // Soft-stop eject delivers half volume; hard-stop delivers full.
-  const delivered = outcome === 'soft' ? state.liquidInTip * 0.5 : state.liquidInTip;
-  if (outcome === 'soft') {
+  // Soft / overshoot ejects deliver half volume + SOFT_STOP_TO_EJECT
+  // warning; only a hard-stop press delivers the full sample. The
+  // overshoot band on the plunger curve maps to "past the click but
+  // not yet at hard stop" — same partial-delivery outcome as soft for
+  // a real micropipette, since the blow-out only happens at the hard
+  // stop. (For DRAW, overshoot is its own warning with full volume —
+  // see resolveDraw — because there the issue is *too much* volume,
+  // not too little.)
+  const isPartialEject = outcome === 'soft' || outcome === 'overshoot';
+  const delivered = isPartialEject ? state.liquidInTip * 0.5 : state.liquidInTip;
+  if (isPartialEject) {
     events.push({ kind: 'WARN', code: 'SOFT_STOP_TO_EJECT' });
     newWarnings.push({ code: 'SOFT_STOP_TO_EJECT', lane: wellIndex });
   }

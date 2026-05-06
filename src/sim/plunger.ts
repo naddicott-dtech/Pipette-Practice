@@ -14,7 +14,7 @@ export interface PlungerCurve {
   peakDepth: number;
 }
 
-export type PlungerOutcome = 'aborted' | 'short' | 'soft' | 'hard';
+export type PlungerOutcome = 'aborted' | 'short' | 'soft' | 'overshoot' | 'hard';
 
 /**
  * Player-intent verbs the plunger can perform. Pickup and discard are
@@ -85,11 +85,26 @@ export function plungerDepthFromHoldMs(holdMs: number): number {
 }
 
 /**
+ * Upper bound of the soft-stop tolerance band. peakDepth at or above
+ * this counts as "past the click" — for DRAW that's an overshoot
+ * (drawing extra volume); for LOAD it's still partial delivery.
+ */
+const OVERSHOOT_OUTCOME_THRESHOLD =
+  PLUNGER.SOFT_STOP + PLUNGER.SOFT_STOP_TOLERANCE;
+
+/**
  * Classify a completed press by peak depth. Bands are documented on
  * PLUNGER in config.ts.
+ *
+ * `'overshoot'` was added 2026-05-08 to close a visible-vs-logic gap:
+ * the PlungerHUD's red zone for DRAW starts at SOFT_STOP_TOLERANCE,
+ * but the rules previously treated everything below HARD_OUTCOME as
+ * 'soft' success. Now red == overshoot == warning (for DRAW) /
+ * partial (for LOAD).
  */
 export function plungerOutcome(curve: PlungerCurve): PlungerOutcome {
   if (curve.peakDepth >= PLUNGER.HARD_OUTCOME_THRESHOLD) return 'hard';
+  if (curve.peakDepth >= OVERSHOOT_OUTCOME_THRESHOLD) return 'overshoot';
   if (curve.peakDepth >= SOFT_OUTCOME_THRESHOLD) return 'soft';
   if (curve.peakDepth >= PLUNGER.SHORT_OUTCOME_THRESHOLD) return 'short';
   return 'aborted';

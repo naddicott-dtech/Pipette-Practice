@@ -77,8 +77,16 @@ describe('plungerOutcome', () => {
   it('returns "soft" within the soft-stop tolerance band', () => {
     expect(plungerOutcome(curveAt(PLUNGER.SOFT_STOP - PLUNGER.SOFT_STOP_TOLERANCE))).toBe('soft');
     expect(plungerOutcome(curveAt(PLUNGER.SOFT_STOP))).toBe('soft');
-    expect(plungerOutcome(curveAt(PLUNGER.SOFT_STOP + 0.1))).toBe('soft');
-    expect(plungerOutcome(curveAt(PLUNGER.HARD_OUTCOME_THRESHOLD - 0.001))).toBe('soft');
+    expect(plungerOutcome(curveAt(PLUNGER.SOFT_STOP + PLUNGER.SOFT_STOP_TOLERANCE - 0.001))).toBe('soft');
+  });
+
+  it('returns "overshoot" between (SOFT + tolerance) and HARD_OUTCOME', () => {
+    // 2026-05-08: PlungerHUD's red zone for DRAW used to be silent in
+    // this band. Now it surfaces as OVERDRAW for DRAW / partial for LOAD.
+    const hi = PLUNGER.SOFT_STOP + PLUNGER.SOFT_STOP_TOLERANCE;
+    expect(plungerOutcome(curveAt(hi))).toBe('overshoot');
+    expect(plungerOutcome(curveAt(hi + 0.05))).toBe('overshoot');
+    expect(plungerOutcome(curveAt(PLUNGER.HARD_OUTCOME_THRESHOLD - 0.001))).toBe('overshoot');
   });
 
   it('returns "hard" once peakDepth crosses HARD_OUTCOME_THRESHOLD', () => {
