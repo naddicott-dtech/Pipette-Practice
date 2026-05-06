@@ -12,7 +12,7 @@ import { FAILURE_COPY } from '../sim/failures';
  */
 export function FailureModal() {
   const failure = useStore((s) => s.failure);
-  const reset = useStore((s) => s.reset);
+  const retryCycle = useStore((s) => s.retryCycle);
 
   return (
     <AnimatePresence>
@@ -47,14 +47,18 @@ export function FailureModal() {
 
             <button
               onClick={(e) => {
-                reset();
-                // Drop focus so Space doesn't re-click "Try Again"
+                // Per-cycle retry: clears just the active lane and
+                // sends the player back to GET_TIP for this cycle.
+                // Prior wells stay loaded — the top-right Reset
+                // button is the way to start completely over.
+                retryCycle();
+                // Drop focus so Space doesn't re-click "Retry this lane"
                 // mid-workflow — Space is owned by PlungerController.
                 e.currentTarget.blur();
               }}
               className="bg-red-600 hover:bg-red-500 px-6 py-2 rounded-lg font-bold transition-transform active:scale-95 text-white"
             >
-              Try Again
+              Retry this lane
             </button>
           </motion.div>
         </motion.div>

@@ -185,6 +185,98 @@ describe('Store — reset', () => {
   });
 });
 
+describe('Store — retryCycle (per-cycle retry)', () => {
+  beforeEach(() => {
+    useStore.getState().reset();
+  });
+
+  it('clears the active cycle but preserves prior wells', () => {
+    // Simulate having completed cycles 0 and 1, then failing on cycle 2.
+    const s = useStore.getState();
+    s.applyRulePatch({
+      activeStep: 2,
+      step: WorkflowStep.LOAD_WELL,
+      hasTip: true,
+      liquidInTip: 1,
+      liquidSourceIndex: 2,
+      dnaInWells: [1, 1, 0, 0],
+      wellSources: [0, 1, null, null],
+      usedTubes: [0, 1, 2],
+      failure: 'SHORT_LOAD',
+      interactionPhase: 'finishing',
+    });
+
+    useStore.getState().retryCycle();
+
+    const after = useStore.getState();
+    expect(after.activeStep).toBe(2); // preserved
+    expect(after.step).toBe(WorkflowStep.GET_TIP);
+    expect(after.hasTip).toBe(false);
+    expect(after.liquidInTip).toBe(0);
+    expect(after.liquidSourceIndex).toBeNull();
+    expect(after.failure).toBeNull();
+    expect(after.interactionPhase).toBe('free');
+    // Prior wells intact, active cycle's well cleared.
+    expect(after.dnaInWells).toEqual([1, 1, 0, 0]);
+    expect(after.wellSources).toEqual([0, 1, null, null]);
+    // usedTubes rebuilt from completed wellSources (no spurious
+    // NO_FRESH_TIP if the player drew successfully before failing).
+    expect(after.usedTubes).toEqual([0, 1]);
+  });
+
+  it('drops warnings recorded against the active cycle', () => {
+    const s = useStore.getState();
+    s.applyRulePatch({
+      activeStep: 1,
+      warnings: [
+        { code: 'WRONG_TUBE', lane: 0 }, // prior cycle, keep
+        { code: 'OVERDRAW', lane: 1 },   // this cycle, drop
+        { code: 'SOFT_STOP_TO_EJECT', lane: 1 }, // this cycle, drop
+      ],
+      failure: 'HARD_STOP_TO_DRAW',
+      interactionPhase: 'finishing',
+    });
+
+    useStore.getState().retryCycle();
+
+    expect(useStore.getState().warnings).toEqual([
+      { code: 'WRONG_TUBE', lane: 0 },
+    ]);
+  });
+
+  it('handles a failure in cycle 0 (no prior wells to preserve)', () => {
+    const s = useStore.getState();
+    s.applyRulePatch({
+      activeStep: 0,
+      step: WorkflowStep.DRAW_SAMPLE,
+      hasTip: true,
+      liquidInTip: 0,
+      liquidSourceIndex: null,
+      failure: 'HARD_STOP_TO_DRAW',
+      interactionPhase: 'finishing',
+    });
+
+    useStore.getState().retryCycle();
+
+    const after = useStore.getState();
+    expect(after.activeStep).toBe(0);
+    expect(after.step).toBe(WorkflowStep.GET_TIP);
+    expect(after.hasTip).toBe(false);
+    expect(after.failure).toBeNull();
+    expect(after.dnaInWells).toEqual([0, 0, 0, 0]);
+  });
+
+  it('does not advance activeStep — caller goes through GET_TIP again', () => {
+    const before = useStore.getState().activeStep;
+    useStore.getState().applyRulePatch({
+      failure: 'EMPTY_EJECT',
+      interactionPhase: 'finishing',
+    });
+    useStore.getState().retryCycle();
+    expect(useStore.getState().activeStep).toBe(before);
+  });
+});
+
 describe('Store — applyRulePatch (rules.ts → store bridge)', () => {
   beforeEach(() => {
     useStore.getState().reset();
