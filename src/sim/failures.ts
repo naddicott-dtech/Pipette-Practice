@@ -1,4 +1,5 @@
 import type { FailureCode, WarningCode } from './types';
+import type { VerdictCode } from './verdict';
 
 export interface FailureCopy {
   /** What technique failed. Headline of the modal or debrief lane. */
@@ -99,3 +100,47 @@ export const WARNING_CODES: WarningCode[] = [
   'LOOSE_TIP',
   'OVERDRAW',
 ];
+
+/**
+ * Per-lane verdict copy shown in the end-of-run debrief modal.
+ * Verdicts describe the BAND (what shows up on the gel); the related
+ * warning copy in FAILURE_COPY describes the TECHNIQUE that produced
+ * it. Different angles, different copy.
+ */
+export interface VerdictCopy {
+  /** Short label (badge text). */
+  label: string;
+  /** One- or two-sentence explanation of what the band means. */
+  body: string;
+}
+
+export const VERDICT_COPY: Record<VerdictCode, VerdictCopy> = {
+  clean: {
+    label: 'Cleanly loaded',
+    body: 'Full volume, no contamination — this lane should run a textbook band.',
+  },
+  faint: {
+    label: 'Faint band',
+    body: 'Released at the soft stop, only half-volume delivered. The lane will be pale compared to the others.',
+  },
+  overdraw: {
+    label: 'Heavy band',
+    body: 'Drew past the soft stop, took up extra sample. The lane will run thicker than the others. This is often an expensive mistake. No DNA left for repeating the protocol (or other groups).',
+  },
+  muddled: {
+    label: 'Muddled lane',
+    body: 'Drew from a previously-used tube — DNA from the earlier cycle contaminates this sample.',
+  },
+  mislabeled: {
+    label: 'Lane swapped',
+    body: "Loaded into a different well than the workflow expected. The band pattern in this slot belongs to a different sample — write it in the notebook.",
+  },
+  'loose-tip': {
+    label: 'Loose tip',
+    body: "The tip wasn't seated firmly during pickup — air leaks during transfer reduce delivered volume.",
+  },
+  missing: {
+    label: 'No DNA delivered',
+    body: 'This lane received no sample. Possible failed eject or skipped load.',
+  },
+};

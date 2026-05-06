@@ -1,6 +1,17 @@
 import { describe, it, expect } from 'vitest';
-import { FAILURE_COPY, FAILURE_CODES, WARNING_CODES } from './failures';
+import { FAILURE_COPY, FAILURE_CODES, WARNING_CODES, VERDICT_COPY } from './failures';
 import type { FailureCode, WarningCode } from './types';
+import type { VerdictCode } from './verdict';
+
+const ALL_VERDICTS: VerdictCode[] = [
+  'clean',
+  'faint',
+  'overdraw',
+  'muddled',
+  'mislabeled',
+  'loose-tip',
+  'missing',
+];
 
 describe('FAILURE_COPY completeness', () => {
   const allCodes: (FailureCode | WarningCode)[] = [
@@ -37,5 +48,21 @@ describe('FAILURE_COPY completeness', () => {
   it('seven failure codes and five warning codes (post-2026-05-08 OVERDRAW)', () => {
     expect(FAILURE_CODES).toHaveLength(7);
     expect(WARNING_CODES).toHaveLength(5);
+  });
+});
+
+describe('VERDICT_COPY completeness', () => {
+  it.each(ALL_VERDICTS)('has copy for %s', (verdict) => {
+    const copy = VERDICT_COPY[verdict];
+    expect(copy).toBeDefined();
+    expect(copy.label.length).toBeGreaterThan(0);
+    expect(copy.body.length).toBeGreaterThan(0);
+  });
+
+  it('every key in VERDICT_COPY is a known verdict', () => {
+    const known = new Set<string>(ALL_VERDICTS);
+    for (const key of Object.keys(VERDICT_COPY)) {
+      expect(known.has(key)).toBe(true);
+    }
   });
 });
