@@ -363,11 +363,16 @@ describe('tryAct (eject, LOAD_WELL)', () => {
     expect(r.nextState.dnaInWells).toBeUndefined();
   });
 
-  it('short press also returns to free without firing a failure', () => {
+  it('short press fires SHORT_LOAD failure (no silent empty load)', () => {
+    // 2026-05-08 regression: pre-fix, a 'short' eject silently
+    // returned to 'free' with no signal to the player — the empty-
+    // wells-3-and-4 report. SHORT_LOAD now halts so the lane can't
+    // end up empty without a modal explaining why.
     const r = tryAct(loadState(), curveFor(SHORT_PRESS_MS));
-    expect(r.nextState.interactionPhase).toBe('free');
-    expect(r.nextState.failure).toBeUndefined();
+    expect(r.nextState.failure).toBe('SHORT_LOAD');
+    expect(r.nextState.interactionPhase).toBe('finishing');
     expect(r.nextState.dnaInWells).toBeUndefined();
+    expect(eventCodes(r.events)).toContain('FAIL:SHORT_LOAD');
   });
 
   it('hard press delivers full volume and advances to DISCARD_TIP', () => {

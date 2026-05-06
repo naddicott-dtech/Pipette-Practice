@@ -63,7 +63,11 @@ function SceneRoot() {
 export default function App() {
   return (
     <div className="w-full h-screen bg-neutral-900 overflow-hidden font-sans text-white select-none">
-      <Canvas shadows gl={{ antialias: true }}>
+      {/* `frameloop="always"` so the scene paints on first mount even
+          if the user never moves the mouse — r3f's default `demand`
+          mode would leave the canvas black until something invalidates,
+          and nothing does until a hover. */}
+      <Canvas shadows frameloop="always" gl={{ antialias: true }}>
         <SceneRoot />
       </Canvas>
 

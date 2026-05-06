@@ -247,12 +247,20 @@ function resolveEject(state: RuleState, outcome: PlungerOutcome): Result {
   if (state.lockedTarget?.kind !== 'well') return NOOP;
   const wellIndex = state.lockedTarget.index;
 
-  // A 'short' eject is treated as a release before the click — no
-  // failure, no warning. Player gets to retry.
+  // A 'short' eject is a brief press that didn't reach the soft stop —
+  // no liquid actually leaves the tip. Pre-2026-05-08 this returned
+  // silently to 'free' and left the player without a signal that
+  // nothing happened. The tester report traced "wells 3 & 4 show no
+  // bands" back to the player thinking they had loaded when they
+  // hadn't. SHORT_LOAD now halts with a modal so the empty-well case
+  // is impossible to mistake.
   if (outcome === 'short') {
     return {
-      nextState: { interactionPhase: 'free', lockedTarget: null },
-      events: [],
+      nextState: {
+        failure: 'SHORT_LOAD',
+        interactionPhase: 'finishing',
+      },
+      events: [{ kind: 'FAIL', code: 'SHORT_LOAD' }],
     };
   }
 

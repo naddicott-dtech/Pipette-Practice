@@ -53,6 +53,11 @@ export const FAILURE_COPY: Record<FailureCode | WarningCode, FailureCopy> = {
     body: "You released the plunger well before the soft-stop click. The pipette only displaces a fraction of the air it needs to, so the volume drawn is way below 20 µL — the lane will run faint or not at all.",
     hint: 'Hold Space until you feel and hear the click, then release. Brief taps don\'t draw a clean volume.',
   },
+  SHORT_LOAD: {
+    title: "Dispense didn't reach the soft stop",
+    body: "You released the plunger before reaching the click, so the sample stayed in the tip — nothing landed in the well. Without a clear failure signal a brief press can feel like a successful load, leaving the lane empty and the rest of the run miscounted.",
+    hint: 'On a load, hold Space PAST the click for the blow-out — that delivers the full volume. Stopping at the click ejects only the main volume; stopping before it dispenses nothing.',
+  },
   NOT_LOW_ENOUGH: {
     title: "Tip didn't reach the well",
     body: 'You stopped the descent above the agar — the tip would dispense into the buffer, not into the well. The DNA disperses and the lane shows nothing.',
@@ -76,6 +81,7 @@ export const FAILURE_CODES: FailureCode[] = [
   'HARD_STOP_TO_DRAW',
   'EMPTY_EJECT',
   'SHORT_DRAW',
+  'SHORT_LOAD',
   'NOT_LOW_ENOUGH',
   'PUNCTURE',
 ];
