@@ -65,6 +65,7 @@ describe('Store — RuleState fields', () => {
     expect(s.interactionPhase).toBe(init.interactionPhase);
     expect(s.lockedTarget).toBe(init.lockedTarget);
     expect(s.dnaInWells).toEqual(Array(WORKFLOW.WELL_COUNT).fill(0));
+    expect(s.wellSources).toEqual(Array(WORKFLOW.WELL_COUNT).fill(null));
   });
 
   it('setActiveStep sets the active step', () => {
@@ -164,12 +165,19 @@ describe('Store — reset', () => {
     s.addDnaToWell(0, 0.5);
     s.addUsedTube(0);
     s.addWarning({ code: 'WRONG_TUBE', lane: 0 });
+    // wellSources isn't directly mutated through a setter — gets
+    // populated via applyRulePatch from resolveEject. Test that reset
+    // restores it to all-nulls regardless.
+    s.applyRulePatch({ wellSources: [0, 1, 2, 3] });
 
     const beforeWells = useStore.getState().dnaInWells;
     const beforeTubes = useStore.getState().usedTubes;
     const beforeWarnings = useStore.getState().warnings;
+    const beforeSources = useStore.getState().wellSources;
 
     s.reset();
+    expect(useStore.getState().wellSources).not.toBe(beforeSources);
+    expect(useStore.getState().wellSources).toEqual([null, null, null, null]);
 
     expect(useStore.getState().dnaInWells).not.toBe(beforeWells);
     expect(useStore.getState().usedTubes).not.toBe(beforeTubes);

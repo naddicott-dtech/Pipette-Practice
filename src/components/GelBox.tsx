@@ -130,6 +130,7 @@ function Well({ id, x, y, z, isBoxOn }: WellProps) {
   const step = useStore((s) => s.step);
   const hoverTarget = useStore((s) => s.hoverTarget);
   const dna = useStore((s) => s.dnaInWells[id] ?? 0);
+  const sourceIndex = useStore((s) => s.wellSources[id] ?? null);
   const interactionPhase = useStore((s) => s.interactionPhase);
   const descentMs = useStore((s) => s.descentMs);
 
@@ -237,13 +238,16 @@ function Well({ id, x, y, z, isBoxOn }: WellProps) {
       )}
 
       {/* Migration bands — bands travel along -X (toward the +
-          electrode at world x=-1). Each lane sources its band offsets
-          from BAND_PATTERNS so lane 2 and lane 4 (same sample) produce
-          identical patterns. Animation is a single useFrame keyed off
+          electrode at world x=-1). Each band group keys off the SAMPLE
+          loaded into this well (wellSources[id]), not the well's own
+          index. So loading sample N into well M renders sample N's
+          pattern in well M — a mislabel shows as the wrong-bands-in-
+          the-wrong-slot, the way it would on a real gel.
+          Animation is a single useFrame per band keyed off
           runStartedAt — no per-band setInterval. */}
-      {isBoxOn && dna > 0 && (
+      {isBoxOn && dna > 0 && sourceIndex !== null && (
         <group>
-          {(BAND_PATTERNS[id] ?? []).map((offset, j) => (
+          {(BAND_PATTERNS[sourceIndex] ?? []).map((offset, j) => (
             <Band key={j} offset={offset} />
           ))}
         </group>

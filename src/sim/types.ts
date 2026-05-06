@@ -86,6 +86,14 @@ export interface RuleState {
   liquidSourceIndex: number | null;
   /** Per-well DNA volume; length === WELL_COUNT. */
   dnaInWells: number[];
+  /**
+   * Per-well source — sample tube index that delivered DNA into each
+   * well, or null if the well is empty. length === WELL_COUNT. The gel
+   * keys band patterns off this so a mislabel (loading sample N into
+   * well M, M ≠ N) shows the SAMPLE's pattern in the wrong slot — the
+   * way it would on a real gel.
+   */
+  wellSources: (number | null)[];
   /** Tubes the player has already drawn from (for NO_FRESH_TIP). */
   usedTubes: number[];
   warnings: WarningRecord[];

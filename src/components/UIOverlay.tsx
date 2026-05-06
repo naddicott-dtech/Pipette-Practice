@@ -5,6 +5,7 @@ import { Pipette as PipetteIcon, Play, RefreshCcw, CheckCircle2 } from 'lucide-r
 import { Prompt } from '../ui/Prompt';
 import { PlungerHUD } from '../ui/PlungerHUD';
 import { FailureModal } from '../ui/FailureModal';
+import { LabNotebook } from '../ui/LabNotebook';
 
 /**
  * Glue layer for HTML overlays. The rotated-slider UI from C0–C2 is
@@ -45,6 +46,7 @@ export function UIOverlay() {
       <Prompt />
       <PlungerHUD />
       <FailureModal />
+      <LabNotebook />
 
       {/* Bottom controls — RUN / COMPLETE actions only; lock-and-act
           is keyboard/mouse via PlungerController. */}
