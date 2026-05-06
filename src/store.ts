@@ -54,12 +54,6 @@ interface SimulationState {
   // ─── Cursor + hover ───────────────────────────────────────────────────
   pointer: { x: number; z: number } | null;
   hoverTarget: HoverTarget;
-  /**
-   * @deprecated Mirrored from `hoverTarget` by InteractionDriver.
-   * Consumed by `GelBox` until C4 replaces it with `activeStep` plus a
-   * live-hover ring.
-   */
-  activeWellIndex: number | null;
 
   // ─── Actions ──────────────────────────────────────────────────────────
   setStep: (step: WorkflowStep) => void;
@@ -83,7 +77,6 @@ interface SimulationState {
    * keys map 1:1 to store keys.
    */
   applyRulePatch: (patch: Partial<RuleState>) => void;
-  setActiveWellIndex: (index: number | null) => void;
   setPointer: (p: { x: number; z: number } | null) => void;
   setHoverTarget: (t: HoverTarget) => void;
   reset: () => void;
@@ -112,7 +105,6 @@ const INITIAL: Pick<
   | 'plungerCurve'
   | 'descentMs'
   | 'tapCount'
-  | 'activeWellIndex'
   | 'pointer'
   | 'hoverTarget'
 > = {
@@ -132,7 +124,6 @@ const INITIAL: Pick<
   plungerCurve: emptyCurve(),
   descentMs: 0,
   tapCount: 0,
-  activeWellIndex: null,
   pointer: null,
   hoverTarget: null,
 };
@@ -163,7 +154,6 @@ export const useStore = create<SimulationState>((set) => ({
   setDescentMs: (descentMs) => set({ descentMs }),
   setTapCount: (tapCount) => set({ tapCount }),
   applyRulePatch: (patch) => set(patch),
-  setActiveWellIndex: (activeWellIndex) => set({ activeWellIndex }),
   setPointer: (pointer) => set({ pointer }),
   setHoverTarget: (hoverTarget) => set({ hoverTarget }),
   reset: () =>
