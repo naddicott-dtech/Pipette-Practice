@@ -10,7 +10,7 @@
  * rules.test.ts cover every cell.
  */
 
-import { WORKFLOW } from './config';
+import { WORKFLOW, RUN_DURATION_MS } from './config';
 import { plungerOutcome, type PlungerCurve, type PlungerOutcome } from './plunger';
 import {
   WorkflowStep,
@@ -485,6 +485,25 @@ function nextStepWithinCycle(step: WorkflowStep): WorkflowStep | null {
 }
 
 // ─── Test helpers ───────────────────────────────────────────────────────
+
+/**
+ * Advance the run while step === RUN_GEL. Called from a useFrame in the
+ * scene driver every frame. Once `elapsedMs` reaches the configured
+ * run duration, fires `STEP_ADVANCED` with `WorkflowStep.COMPLETE` and
+ * patches `step`. Below that threshold it's a no-op.
+ *
+ * Importantly, the rule layer doesn't know about wall-clock time on its
+ * own — `elapsedMs` is computed by the driver as `now - runStartedAt`.
+ * That keeps the rules pure (no clock dependencies in tests).
+ */
+export function tickRun(state: RuleState, elapsedMs: number): Result {
+  if (state.step !== WorkflowStep.RUN_GEL) return NOOP;
+  if (elapsedMs < RUN_DURATION_MS) return NOOP;
+  return {
+    nextState: { step: WorkflowStep.COMPLETE },
+    events: [{ kind: 'STEP_ADVANCED', nextStep: WorkflowStep.COMPLETE }],
+  };
+}
 
 /** Apply a Result's nextState patch to a starting state. Used in tests. */
 export function applyPatch(base: RuleState, patch: Partial<RuleState>): RuleState {

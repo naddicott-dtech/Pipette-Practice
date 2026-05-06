@@ -15,7 +15,7 @@ import { FailureModal } from '../ui/FailureModal';
 export function UIOverlay() {
   const step = useStore((s) => s.step);
   const setBoxOn = useStore((s) => s.setBoxOn);
-  const setStep = useStore((s) => s.setStep);
+  const setRunStartedAt = useStore((s) => s.setRunStartedAt);
   const reset = useStore((s) => s.reset);
 
   return (
@@ -54,8 +54,12 @@ export function UIOverlay() {
             initial={{ y: 50, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             onClick={() => {
+              // Don't snap-advance to COMPLETE; let tickRun (in
+              // PlungerController) flip the step once the run reaches
+              // RUN_DURATION_MS. Bands animate via useFrame keyed off
+              // runStartedAt.
               setBoxOn(true);
-              setStep(WorkflowStep.COMPLETE);
+              setRunStartedAt(performance.now());
             }}
             className="bg-blue-600 hover:bg-blue-500 text-white px-8 py-4 rounded-2xl font-black text-xl flex items-center gap-3 shadow-lg mb-4"
           >
