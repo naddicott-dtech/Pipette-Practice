@@ -268,6 +268,15 @@ function Well({ id, x, y, z, isBoxOn }: WellProps) {
  * and the parent `Well` subscribes to `hoverTarget` (changes on every
  * cursor move) and `descentMs` (frequent during LOAD_WELL). Without
  * the imperative-only path, bands could get reset to x=0 mid-run.
+ *
+ * Depth/render-order belt-and-brace (2026-05-08):
+ *   - Bands sit at y=0.3 — clearly above the gel slab (top y=0.05) and
+ *     the well box (top y=0.15). Bands can never be inside an opaque
+ *     mesh's volume, eliminating the front-lane depth-write occlusion
+ *     that was hiding migrating bands behind the well box.
+ *   - depthTest / depthWrite = false on the material, plus an explicit
+ *     renderOrder = 10, so bands always draw in front of every other
+ *     mesh regardless of three.js's per-frame transparency sort.
  */
 function Band({ offset }: { offset: number }) {
   const meshRef = useRef<THREE.Mesh>(null);
@@ -275,7 +284,7 @@ function Band({ offset }: { offset: number }) {
   useFrame(() => {
     const m = meshRef.current;
     if (!m) return;
-    m.position.y = -0.05;
+    m.position.y = 0.3;
     const startedAt = useStore.getState().runStartedAt;
     if (startedAt === null) {
       m.position.x = 0;
@@ -286,11 +295,7 @@ function Band({ offset }: { offset: number }) {
   });
 
   return (
-    <mesh ref={meshRef}>
-      {/* Slightly thicker on Y and emissive so bands read clearly
-          through the buffer chamber's transparent front wall — the
-          front-most lanes were rendering correctly but visually
-          getting lost in the depth-sorted transparency stack. */}
+    <mesh ref={meshRef} renderOrder={10}>
       <boxGeometry args={[0.12, 0.04, 0.7]} />
       <meshStandardMaterial
         color="#7c3aed"
@@ -298,6 +303,8 @@ function Band({ offset }: { offset: number }) {
         emissiveIntensity={0.5}
         opacity={0.95}
         transparent
+        depthTest={false}
+        depthWrite={false}
       />
     </mesh>
   );
