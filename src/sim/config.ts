@@ -34,15 +34,18 @@ export const PIPETTE = {
   // Y_LOWERED_TIPS so the tip doesn't poke through the beaker bottom.
   Y_LOWERED_TRASH: 2.5,
   FOLLOW_LERP: 0.1,
-  // LOAD_WELL descent visualization. Tip travels from Y_DESCENT_START
-  // (above the buffer surface at world y=0.25) down to Y_DESCENT_PUNCTURE
-  // (visibly below the well floor at world y=-0.05) over
-  // WORKFLOW.DESCENT.AUTO_PUNCTURE_MS. Numbers chosen so the timing
-  // thresholds line up with visible Y landmarks:
-  //   t = HIGH_TO_GOOD_MS / AUTO   ≈ 0.6  → tip at buffer surface
-  //   t = GOOD_TO_PUNCTURE_MS / AUTO ≈ 0.84 → tip at well floor
-  Y_DESCENT_START: 1.0,
-  Y_DESCENT_PUNCTURE: -0.25,
+  // LOAD_WELL descent visualization. Body Y values (the body center is
+  // ~2 units above the tip apex). With body y=2.5 the apex starts at
+  // y=0.5 — well above the buffer surface (y=0.25) so the player
+  // *sees* the tip approach the water. With body y=1.7 the apex ends
+  // at y=-0.3 — visibly below the well floor (y=-0.05) so puncture
+  // reads as a clear over-shoot.
+  // Timing thresholds are calibrated below so the apex Y at each
+  // boundary lines up with a visible scene landmark:
+  //   HIGH_TO_GOOD_MS  → apex at well rim   (y=0.15)
+  //   GOOD_TO_PUNCTURE → apex at well floor (y=-0.05)
+  Y_DESCENT_START: 2.5,
+  Y_DESCENT_PUNCTURE: 1.7,
 } as const;
 
 export const WORKFLOW = {
@@ -65,8 +68,8 @@ export const WORKFLOW = {
    * controller fires PUNCTURE so we don't sit forever.
    */
   DESCENT: {
-    HIGH_TO_GOOD_MS: 1800,
-    GOOD_TO_PUNCTURE_MS: 2520,
+    HIGH_TO_GOOD_MS: 1300,
+    GOOD_TO_PUNCTURE_MS: 2050,
     AUTO_PUNCTURE_MS: 3000,
   },
 } as const;

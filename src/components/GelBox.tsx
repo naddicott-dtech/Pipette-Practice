@@ -4,6 +4,7 @@ import { useStore, WorkflowStep } from '../store';
 import { WORKFLOW } from '../sim/config';
 import { WELLS } from '../scene/targets';
 import { wellHighlight } from '../scene/wellHighlight';
+import { SCENE_LANDMARKS } from '../scene/sceneGeometry';
 
 const GEL_ORIGIN: [number, number, number] = [3, 0, 0];
 
@@ -11,10 +12,10 @@ const GEL_ORIGIN: [number, number, number] = [3, 0, 0];
 // chamber is naturally rectangular and these read well from OVERVIEW).
 const BUFFER_SIZE: [number, number, number] = [8, 0.5, 6];
 const SLAB_SIZE: [number, number, number] = [7, 0.3, 5];
-// World y at which the buffer's top surface sits — drawn explicitly as
-// a thin emissive band so the player has a visible water line during
-// the LOAD_WELL descent.
-const BUFFER_SURFACE_Y = 0.25;
+// Drawn explicitly as a thin emissive band so the player has a visible
+// water line during the LOAD_WELL descent. Source of truth in
+// src/scene/sceneGeometry.ts.
+const BUFFER_SURFACE_Y = SCENE_LANDMARKS.BUFFER_SURFACE_Y;
 
 /**
  * The electrophoresis chamber. Renders the buffer + gel slab +

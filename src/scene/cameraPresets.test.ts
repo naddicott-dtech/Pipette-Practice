@@ -54,6 +54,28 @@ describe('actionPresetFor', () => {
     expect(a.lookAt).not.toEqual(b.lookAt);
     expect(a.position).not.toEqual(b.position);
   });
+
+  it('the well preset places the camera outside the chamber right wall', () => {
+    // The chamber spans world x ∈ [-1, 7] (centered at GEL_ORIGIN.x=3,
+    // width 8). Wells are at world x=6. Their ACTION camera must sit
+    // past the chamber's right wall (x > 7) so the player sees the
+    // descent through the wall — not from "inside" the chamber.
+    for (const well of WELLS) {
+      const preset = actionPresetFor({ kind: 'well', index: well.index });
+      expect(preset.position[0]).toBeGreaterThan(7);
+    }
+  });
+
+  it('the well preset is more side-on than the default ACTION preset', () => {
+    // The well preset trades the default's +Z corner offset for a
+    // larger +X offset so the descent stays in frame. Verifies the
+    // per-kind branch lands the right offset for wells.
+    const wellPreset = actionPresetFor({ kind: 'well', index: 0 });
+    const samplePreset = actionPresetFor({ kind: 'sample', index: 0 });
+    const wellDx = wellPreset.position[0] - WELLS[0].position[0];
+    const sampleDx = samplePreset.position[0] - SAMPLE_TUBES[0].position[0];
+    expect(wellDx).toBeGreaterThan(sampleDx);
+  });
 });
 
 describe('OVERVIEW and RUN presets', () => {

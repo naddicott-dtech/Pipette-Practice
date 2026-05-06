@@ -1,15 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { PLUNGER, VOLUME, PIPETTE, WORKFLOW, CAMERA } from './config';
-import {
-  BEAKER_HEIGHT,
-  BEAKER_FLOOR_Y,
-} from '../scene/Trash';
+import { BEAKER_HEIGHT, BEAKER_FLOOR_Y } from '../scene/Trash';
+import { SCENE_LANDMARKS } from '../scene/sceneGeometry';
 
-// Distance from the pipette body center to the tip apex. Body cylinder
-// is 3 units tall (centered at group origin); tip group sits at local
-// y=-1.55 with a length-0.9 cone oriented apex-down. Apex local
-// y = -1.55 - 0.45 = -2.0.
-const PIPETTE_BODY_TO_TIP_APEX = 2.0;
+const { PIPETTE_BODY_TO_TIP_APEX, BUFFER_SURFACE_Y, WELL_RIM_Y, WELL_FLOOR_Y } =
+  SCENE_LANDMARKS;
 
 describe('config invariants', () => {
   it('plunger thresholds are ordered REST < SOFT_STOP < HARD_STOP', () => {
@@ -69,8 +64,43 @@ describe('config invariants', () => {
     expect(WORKFLOW.TAP_WINDOW_MS).toBeGreaterThan(0);
   });
 
-  it('descent y-coordinates run from above buffer to below agar', () => {
+  it('descent body-Y values are ordered START > PUNCTURE', () => {
     expect(PIPETTE.Y_DESCENT_START).toBeGreaterThan(PIPETTE.Y_DESCENT_PUNCTURE);
+  });
+
+  it('tip apex starts above the buffer surface and ends below the well floor', () => {
+    // The player needs to *see* the tip approach the water from above
+    // and end up clearly past the well floor on a puncture. Body Y
+    // values are translated to apex Y by subtracting the body→apex
+    // offset (matches the geometry in src/components/Pipette.tsx).
+    const apexAtStart = PIPETTE.Y_DESCENT_START - PIPETTE_BODY_TO_TIP_APEX;
+    const apexAtPuncture = PIPETTE.Y_DESCENT_PUNCTURE - PIPETTE_BODY_TO_TIP_APEX;
+    expect(apexAtStart).toBeGreaterThan(BUFFER_SURFACE_Y);
+    expect(apexAtPuncture).toBeLessThan(WELL_FLOOR_Y);
+  });
+
+  it('descent timing thresholds correspond to visible Y landmarks', () => {
+    // HIGH_TO_GOOD_MS should fire when the apex crosses the well rim;
+    // GOOD_TO_PUNCTURE_MS when it crosses the well floor. Verifies
+    // that the timing constants stay in sync with the chamber geometry.
+    const apexAtStart = PIPETTE.Y_DESCENT_START - PIPETTE_BODY_TO_TIP_APEX;
+    const apexAtPuncture = PIPETTE.Y_DESCENT_PUNCTURE - PIPETTE_BODY_TO_TIP_APEX;
+    const tForApex = (target: number) =>
+      (apexAtStart - target) / (apexAtStart - apexAtPuncture);
+
+    const tHighToGood = tForApex(WELL_RIM_Y);
+    const tGoodToPuncture = tForApex(WELL_FLOOR_Y);
+
+    const expectedHighToGood = tHighToGood * WORKFLOW.DESCENT.AUTO_PUNCTURE_MS;
+    const expectedGoodToPuncture =
+      tGoodToPuncture * WORKFLOW.DESCENT.AUTO_PUNCTURE_MS;
+
+    // Tolerance ±100 ms — allows tuning the constants in round numbers
+    // (e.g. 1300 vs the exact 1313) without breaking the invariant.
+    expect(WORKFLOW.DESCENT.HIGH_TO_GOOD_MS).toBeGreaterThan(expectedHighToGood - 100);
+    expect(WORKFLOW.DESCENT.HIGH_TO_GOOD_MS).toBeLessThan(expectedHighToGood + 100);
+    expect(WORKFLOW.DESCENT.GOOD_TO_PUNCTURE_MS).toBeGreaterThan(expectedGoodToPuncture - 100);
+    expect(WORKFLOW.DESCENT.GOOD_TO_PUNCTURE_MS).toBeLessThan(expectedGoodToPuncture + 100);
   });
 
   it('Y_LOWERED_TRASH lands the tip apex inside the beaker', () => {
