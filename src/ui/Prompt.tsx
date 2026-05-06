@@ -19,8 +19,9 @@ export function Prompt() {
   const interactionPhase = useStore((s) => s.interactionPhase);
   const hoverTarget = useStore((s) => s.hoverTarget);
   const activeStep = useStore((s) => s.activeStep);
+  const tapCount = useStore((s) => s.tapCount);
 
-  const copy = resolvePrompt({ step, interactionPhase, hoverTarget, activeStep });
+  const copy = resolvePrompt({ step, interactionPhase, hoverTarget, activeStep, tapCount });
   const visible = copy.tone !== 'silent';
 
   return (

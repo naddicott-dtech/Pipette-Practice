@@ -5,6 +5,7 @@ import { Pipette } from './components/Pipette';
 import { GelBox } from './components/GelBox';
 import { Table } from './scene/Table';
 import { TipRack } from './scene/TipRack';
+import { Trash } from './scene/Trash';
 import { SampleTubeRack } from './scene/SampleTubeRack';
 import { UIOverlay } from './components/UIOverlay';
 import { CameraRig } from './scene/CameraRig';
@@ -42,6 +43,7 @@ function SceneRoot() {
 
       <Table />
       <TipRack />
+      <Trash />
       <SampleTubeRack />
       <GelBox />
       <Pipette />

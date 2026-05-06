@@ -63,10 +63,15 @@ describe('plungerOutcome', () => {
     return { startMs: 0, currentMs: 100, peakDepth };
   }
 
-  it('returns "aborted" for a press well below the soft stop', () => {
+  it('returns "aborted" only for the smallest taps (below SHORT)', () => {
     expect(plungerOutcome(curveAt(0))).toBe('aborted');
-    expect(plungerOutcome(curveAt(0.3))).toBe('aborted');
-    expect(plungerOutcome(curveAt(PLUNGER.SOFT_STOP - PLUNGER.SOFT_STOP_TOLERANCE - 0.01))).toBe('aborted');
+    expect(plungerOutcome(curveAt(PLUNGER.SHORT_OUTCOME_THRESHOLD - 0.01))).toBe('aborted');
+  });
+
+  it('returns "short" between SHORT and SOFT thresholds', () => {
+    expect(plungerOutcome(curveAt(PLUNGER.SHORT_OUTCOME_THRESHOLD))).toBe('short');
+    expect(plungerOutcome(curveAt(0.3))).toBe('short');
+    expect(plungerOutcome(curveAt(PLUNGER.SOFT_STOP - PLUNGER.SOFT_STOP_TOLERANCE - 0.01))).toBe('short');
   });
 
   it('returns "soft" within the soft-stop tolerance band', () => {
@@ -135,5 +140,11 @@ describe('curve lifecycle (emptyCurve, startCurve, tickCurve)', () => {
     let c = startCurve(0);
     c = tickCurve(c, 50);
     expect(plungerOutcome(c)).toBe('aborted');
+  });
+
+  it('a half-press classifies as "short"', () => {
+    let c = startCurve(0);
+    c = tickCurve(c, PLUNGER.HOLD_TO_SOFT_MS / 2);
+    expect(plungerOutcome(c)).toBe('short');
   });
 });

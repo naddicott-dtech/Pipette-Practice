@@ -11,7 +11,7 @@
  */
 
 import { WORKFLOW } from './config';
-import { plungerOutcome, type PlungerCurve, type PlungerOutcome, type PlungerAction } from './plunger';
+import { plungerOutcome, type PlungerCurve, type PlungerOutcome } from './plunger';
 import {
   WorkflowStep,
   type FailureCode,
@@ -52,6 +52,8 @@ export function initialRuleState(): RuleState {
     failure: null,
     interactionPhase: 'free',
     lockedTarget: null,
+    descentMs: 0,
+    tapCount: 0,
   };
 }
 
@@ -129,17 +131,23 @@ export function tryLockOnto(state: RuleState, hover: HoverTarget): Result {
 }
 
 /**
- * Cancel out of a commit, lock, or aborted action. Returns to 'free' and
- * clears lockedTarget. Calling cancel from any other phase is a no-op.
+ * Cancel out of a commit, lock, descent, or aborted action. Returns to
+ * 'free' and clears lockedTarget plus any in-flight descent / tap counter.
  */
 export function tryCancel(state: RuleState): Result {
   if (
     state.interactionPhase === 'committing' ||
+    state.interactionPhase === 'descending' ||
     state.interactionPhase === 'locked' ||
     state.interactionPhase === 'acting'
   ) {
     return {
-      nextState: { interactionPhase: 'free', lockedTarget: null },
+      nextState: {
+        interactionPhase: 'free',
+        lockedTarget: null,
+        descentMs: 0,
+        tapCount: 0,
+      },
       events: [],
     };
   }
@@ -149,39 +157,14 @@ export function tryCancel(state: RuleState): Result {
 // ─── Action resolution ──────────────────────────────────────────────────
 
 /**
- * Map a workflow step to the action it performs at the locked target.
- * Used internally by `tryAct` so the driver doesn't have to repeat
- * the dispatch.
- */
-function actionForStep(step: WorkflowStep): PlungerAction | null {
-  switch (step) {
-    case WorkflowStep.GET_TIP:
-      return 'pickup';
-    case WorkflowStep.DRAW_SAMPLE:
-      return 'draw';
-    case WorkflowStep.LOAD_WELL:
-      return 'eject';
-    case WorkflowStep.DISCARD_TIP:
-      return 'discard';
-    default:
-      return null;
-  }
-}
-
-/**
  * Resolve a completed plunger press into a state patch. Called by the
- * driver on `Space-up` / `mouse-up` while in 'acting' phase.
- *
- * Aborted presses (player released before the soft-stop zone) silently
- * return to 'free' with no rule fired and no warning recorded — the
- * canonical table treats abort as a polite cancellation.
+ * driver on `Space-up` / `mouse-up` while in 'acting' phase. Only DRAW
+ * and LOAD_WELL eject route through here — pickup and discard are
+ * tap-driven and have their own entry points.
  */
 export function tryAct(state: RuleState, curve: PlungerCurve): Result {
   if (state.interactionPhase !== 'acting') return NOOP;
   if (state.lockedTarget === null) return NOOP;
-
-  const action = actionForStep(state.step);
-  if (action === null) return NOOP;
 
   const outcome = plungerOutcome(curve);
   if (outcome === 'aborted') {
@@ -191,28 +174,16 @@ export function tryAct(state: RuleState, curve: PlungerCurve): Result {
     };
   }
 
-  switch (action) {
-    case 'pickup':
-      return resolvePickup(state);
-    case 'draw':
+  switch (state.step) {
+    case WorkflowStep.DRAW_SAMPLE:
       return resolveDraw(state, outcome);
-    case 'eject':
+    case WorkflowStep.LOAD_WELL:
       return resolveEject(state, outcome);
-    case 'discard':
-      return resolveDiscard(state);
+    default:
+      // GET_TIP and DISCARD_TIP arrive here only if the controller is
+      // misrouting input — they should use tryTapPickup / tryTapDiscard.
+      return NOOP;
   }
-}
-
-function resolvePickup(state: RuleState): Result {
-  // Pickup ignores soft/hard distinction — any non-aborted press picks up.
-  if (state.lockedTarget?.kind !== 'tip-rack') return NOOP;
-  return {
-    nextState: {
-      hasTip: true,
-      interactionPhase: 'finishing',
-    },
-    events: [{ kind: 'STEP_ADVANCED', nextStep: WorkflowStep.DRAW_SAMPLE }],
-  };
 }
 
 function resolveDraw(state: RuleState, outcome: PlungerOutcome): Result {
@@ -226,6 +197,16 @@ function resolveDraw(state: RuleState, outcome: PlungerOutcome): Result {
         interactionPhase: 'finishing',
       },
       events: [{ kind: 'FAIL', code: 'HARD_STOP_TO_DRAW' }],
+    };
+  }
+
+  if (outcome === 'short') {
+    return {
+      nextState: {
+        failure: 'SHORT_DRAW',
+        interactionPhase: 'finishing',
+      },
+      events: [{ kind: 'FAIL', code: 'SHORT_DRAW' }],
     };
   }
 
@@ -265,6 +246,15 @@ function resolveEject(state: RuleState, outcome: PlungerOutcome): Result {
   if (state.lockedTarget?.kind !== 'well') return NOOP;
   const wellIndex = state.lockedTarget.index;
 
+  // A 'short' eject is treated as a release before the click — no
+  // failure, no warning. Player gets to retry.
+  if (outcome === 'short') {
+    return {
+      nextState: { interactionPhase: 'free', lockedTarget: null },
+      events: [],
+    };
+  }
+
   // Empty tip — failure regardless of soft/hard.
   if (state.liquidInTip <= 0) {
     return {
@@ -276,11 +266,9 @@ function resolveEject(state: RuleState, outcome: PlungerOutcome): Result {
     };
   }
 
-  // Wrong-well variant: same lane-mislabel pedagogy as WRONG_TUBE,
-  // surfaced when the player loads into a non-active well. We reuse
-  // the WRONG_TUBE code (per Decision Log "WRONG_TUBE replaces the
-  // conceptual gap left by retiring NOT_LOW_ENOUGH" — the rule fires
-  // at either the draw or load mismatch, whichever happens).
+  // Wrong-well variant: lane-mismatch warning. Independent of the
+  // depth-based NOT_LOW_ENOUGH/PUNCTURE failures, which fire during the
+  // descent sub-phase before the eject is even attempted.
   const wrongLane = wellIndex !== state.activeStep;
   const events: RuleEvent[] = [];
   const newWarnings = [...state.warnings];
@@ -315,17 +303,95 @@ function resolveEject(state: RuleState, outcome: PlungerOutcome): Result {
   };
 }
 
-function resolveDiscard(state: RuleState): Result {
+// ─── Tap-driven actions (GET_TIP pickup, DISCARD_TIP eject) ─────────────
+
+/**
+ * Pick up a tip from the rack. Tap-driven (real micropipettes use a
+ * "tap-tap-tap" seating motion, not a plunger press). Called by the
+ * controller when either:
+ *   - the player completes TAP_TARGET_COUNT taps within the window
+ *     (`firm: true`) — no warning
+ *   - the tap window times out at exactly 1 tap (`firm: false`) —
+ *     LOOSE_TIP warning, but the workflow still advances
+ */
+export function tryTapPickup(state: RuleState, firm: boolean): Result {
+  if (state.interactionPhase !== 'locked') return NOOP;
+  if (state.step !== WorkflowStep.GET_TIP) return NOOP;
+  if (state.lockedTarget?.kind !== 'tip-rack') return NOOP;
+
+  const events: RuleEvent[] = [];
+  const patch: Partial<RuleState> = {
+    hasTip: true,
+    interactionPhase: 'finishing',
+    tapCount: 0,
+  };
+  if (!firm) {
+    events.push({ kind: 'WARN', code: 'LOOSE_TIP' });
+    patch.warnings = [...state.warnings, { code: 'LOOSE_TIP', lane: state.activeStep }];
+  }
+  events.push({ kind: 'STEP_ADVANCED', nextStep: WorkflowStep.DRAW_SAMPLE });
+
+  return { nextState: patch, events };
+}
+
+/**
+ * Discard the tip into the trash. Tap-driven (real micropipettes have a
+ * dedicated eject button — single press, tip flies off). Called by the
+ * controller on the first Space-press in `locked` for DISCARD_TIP.
+ */
+export function tryTapDiscard(state: RuleState): Result {
+  if (state.interactionPhase !== 'locked') return NOOP;
+  if (state.step !== WorkflowStep.DISCARD_TIP) return NOOP;
   if (state.lockedTarget?.kind !== 'trash') return NOOP;
-  // Discard always succeeds. Tip is removed; any residual liquid is
-  // cleared (in real life it goes in the trash).
+
   return {
     nextState: {
       hasTip: false,
       liquidInTip: 0,
       liquidSourceIndex: null,
       interactionPhase: 'finishing',
+      tapCount: 0,
     },
+    events: [],
+  };
+}
+
+// ─── Descent (LOAD_WELL only) ───────────────────────────────────────────
+
+/**
+ * Resolve the LOAD_WELL descent at the moment the player presses Space
+ * (or auto-fires at AUTO_PUNCTURE_MS). Three zones, evaluated against
+ * `descentMs`:
+ *   < HIGH_TO_GOOD_MS              → NOT_LOW_ENOUGH failure
+ *   < GOOD_TO_PUNCTURE_MS          → transition to 'locked' for plunger press
+ *   ≥ GOOD_TO_PUNCTURE_MS          → PUNCTURE failure
+ */
+export function tryStopDescent(state: RuleState, descentMs: number): Result {
+  if (state.interactionPhase !== 'descending') return NOOP;
+  if (state.step !== WorkflowStep.LOAD_WELL) return NOOP;
+  if (state.lockedTarget?.kind !== 'well') return NOOP;
+
+  if (descentMs < WORKFLOW.DESCENT.HIGH_TO_GOOD_MS) {
+    return {
+      nextState: {
+        failure: 'NOT_LOW_ENOUGH',
+        interactionPhase: 'finishing',
+      },
+      events: [{ kind: 'FAIL', code: 'NOT_LOW_ENOUGH' }],
+    };
+  }
+  if (descentMs >= WORKFLOW.DESCENT.GOOD_TO_PUNCTURE_MS) {
+    return {
+      nextState: {
+        failure: 'PUNCTURE',
+        interactionPhase: 'finishing',
+      },
+      events: [{ kind: 'FAIL', code: 'PUNCTURE' }],
+    };
+  }
+  // Good zone — proceed to plunger press.
+  return {
+    nextState: { interactionPhase: 'locked' },
     events: [],
   };
 }
@@ -354,6 +420,8 @@ export function advanceFromFinishing(state: RuleState): Result {
           activeStep: state.activeStep + 1,
           interactionPhase: 'free',
           lockedTarget: null,
+          descentMs: 0,
+          tapCount: 0,
         },
         events: [
           { kind: 'CYCLE_COMPLETE' },
@@ -366,6 +434,8 @@ export function advanceFromFinishing(state: RuleState): Result {
         step: WorkflowStep.RUN_GEL,
         interactionPhase: 'free',
         lockedTarget: null,
+        descentMs: 0,
+        tapCount: 0,
       },
       events: [{ kind: 'CYCLE_COMPLETE' }, { kind: 'RUN_READY' }],
     };
@@ -376,7 +446,12 @@ export function advanceFromFinishing(state: RuleState): Result {
   if (next === null) {
     // RUN_GEL or COMPLETE — no further progression from finishing.
     return {
-      nextState: { interactionPhase: 'free', lockedTarget: null },
+      nextState: {
+        interactionPhase: 'free',
+        lockedTarget: null,
+        descentMs: 0,
+        tapCount: 0,
+      },
       events: [],
     };
   }
@@ -385,6 +460,8 @@ export function advanceFromFinishing(state: RuleState): Result {
       step: next,
       interactionPhase: 'free',
       lockedTarget: null,
+      descentMs: 0,
+      tapCount: 0,
     },
     events: [{ kind: 'STEP_ADVANCED', nextStep: next }],
   };

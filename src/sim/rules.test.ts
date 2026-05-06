@@ -5,6 +5,9 @@ import {
   tryLockOnto,
   tryCancel,
   tryAct,
+  tryTapPickup,
+  tryTapDiscard,
+  tryStopDescent,
   advanceFromFinishing,
   applyPatch,
   type Result,
@@ -32,7 +35,13 @@ function curveFor(holdMs: number): PlungerCurve {
 
 const SOFT_PRESS_MS = PLUNGER.HOLD_TO_SOFT_MS + Math.floor(PLUNGER.SOFT_STOP_RESISTANCE_MS / 2);
 const HARD_PRESS_MS = PLUNGER.HOLD_TO_HARD_MS;
-const ABORTED_PRESS_MS = 100;
+const SHORT_PRESS_MS = Math.floor(PLUNGER.HOLD_TO_SOFT_MS * 0.4); // ≈40% of soft → 'short'
+const ABORTED_PRESS_MS = 50; // ≈8% of soft → 'aborted'
+
+const GOOD_DESCENT_MS =
+  Math.floor((WORKFLOW.DESCENT.HIGH_TO_GOOD_MS + WORKFLOW.DESCENT.GOOD_TO_PUNCTURE_MS) / 2);
+const TOO_HIGH_DESCENT_MS = Math.floor(WORKFLOW.DESCENT.HIGH_TO_GOOD_MS / 2);
+const PUNCTURE_DESCENT_MS = WORKFLOW.DESCENT.GOOD_TO_PUNCTURE_MS + 50;
 
 function eventCodes(events: RuleEvent[]): string[] {
   return events.map((e) =>
@@ -125,10 +134,25 @@ describe('tryCancel', () => {
     expect(r.nextState.lockedTarget).toBeNull();
   });
 
-  it('returns to free from locked', () => {
-    const r = tryCancel(state({ interactionPhase: 'locked', lockedTarget: { kind: 'tip-rack' } }));
+  it('returns to free from descending and clears descentMs', () => {
+    const r = tryCancel(state({
+      interactionPhase: 'descending',
+      lockedTarget: { kind: 'well', index: 0 },
+      descentMs: 800,
+    }));
+    expect(r.nextState.interactionPhase).toBe('free');
+    expect(r.nextState.descentMs).toBe(0);
+  });
+
+  it('returns to free from locked and clears tapCount', () => {
+    const r = tryCancel(state({
+      interactionPhase: 'locked',
+      lockedTarget: { kind: 'tip-rack' },
+      tapCount: 2,
+    }));
     expect(r.nextState.interactionPhase).toBe('free');
     expect(r.nextState.lockedTarget).toBeNull();
+    expect(r.nextState.tapCount).toBe(0);
   });
 
   it('returns to free from acting (discards in-flight press)', () => {
@@ -145,32 +169,98 @@ describe('tryCancel', () => {
   });
 });
 
-// ─── tryAct: pickup ─────────────────────────────────────────────────────
+// ─── tryTapPickup (GET_TIP, replaces tryAct/pickup) ─────────────────────
 
-describe('tryAct (pickup, GET_TIP)', () => {
+describe('tryTapPickup', () => {
   const base = state({
     step: WorkflowStep.GET_TIP,
-    interactionPhase: 'acting',
+    interactionPhase: 'locked',
     lockedTarget: { kind: 'tip-rack' },
   });
 
-  it('aborted press returns to free with no events', () => {
-    const r = tryAct(base, curveFor(ABORTED_PRESS_MS));
-    expect(r.nextState.interactionPhase).toBe('free');
-    expect(r.nextState.hasTip).toBeUndefined();
-    expect(r.events).toEqual([]);
-  });
-
-  it('soft press picks up a tip and advances to DRAW_SAMPLE', () => {
-    const r = tryAct(base, curveFor(SOFT_PRESS_MS));
+  it('firm pickup advances to DRAW_SAMPLE with no warning', () => {
+    const r = tryTapPickup(base, true);
     expect(r.nextState.hasTip).toBe(true);
     expect(r.nextState.interactionPhase).toBe('finishing');
-    expect(eventCodes(r.events)).toContain('STEP_ADVANCED');
+    expect(r.nextState.tapCount).toBe(0);
+    expect(eventCodes(r.events)).toEqual(['STEP_ADVANCED']);
+    expect(r.nextState.warnings).toBeUndefined();
   });
 
-  it('hard press also picks up a tip (no soft/hard distinction for pickup)', () => {
-    const r = tryAct(base, curveFor(HARD_PRESS_MS));
+  it('non-firm pickup fires LOOSE_TIP warning but still advances', () => {
+    const r = tryTapPickup(base, false);
     expect(r.nextState.hasTip).toBe(true);
+    expect(r.nextState.interactionPhase).toBe('finishing');
+    expect(eventCodes(r.events)).toContain('WARN:LOOSE_TIP');
+    expect(eventCodes(r.events)).toContain('STEP_ADVANCED');
+    expect(r.nextState.warnings?.[0]).toEqual({ code: 'LOOSE_TIP', lane: 0 });
+  });
+
+  it('is a no-op outside locked GET_TIP', () => {
+    expect(tryTapPickup(state(), true).nextState).toEqual({});
+    expect(tryTapPickup(state({ step: WorkflowStep.GET_TIP, interactionPhase: 'free' }), true).nextState).toEqual({});
+  });
+});
+
+// ─── tryTapDiscard (DISCARD_TIP, replaces tryAct/discard) ───────────────
+
+describe('tryTapDiscard', () => {
+  const base = state({
+    step: WorkflowStep.DISCARD_TIP,
+    hasTip: true,
+    liquidInTip: 0.2,
+    interactionPhase: 'locked',
+    lockedTarget: { kind: 'trash' },
+  });
+
+  it('discards the tip and clears residual liquid', () => {
+    const r = tryTapDiscard(base);
+    expect(r.nextState.hasTip).toBe(false);
+    expect(r.nextState.liquidInTip).toBe(0);
+    expect(r.nextState.liquidSourceIndex).toBeNull();
+    expect(r.nextState.interactionPhase).toBe('finishing');
+  });
+
+  it('is a no-op outside locked DISCARD_TIP', () => {
+    expect(tryTapDiscard(state()).nextState).toEqual({});
+  });
+});
+
+// ─── tryStopDescent (LOAD_WELL descent gate) ────────────────────────────
+
+describe('tryStopDescent', () => {
+  const base = state({
+    step: WorkflowStep.LOAD_WELL,
+    hasTip: true,
+    liquidInTip: 1,
+    liquidSourceIndex: 0,
+    interactionPhase: 'descending',
+    lockedTarget: { kind: 'well', index: 0 },
+    activeStep: 0,
+  });
+
+  it('stopping too high fires NOT_LOW_ENOUGH', () => {
+    const r = tryStopDescent(base, TOO_HIGH_DESCENT_MS);
+    expect(r.nextState.failure).toBe('NOT_LOW_ENOUGH');
+    expect(r.nextState.interactionPhase).toBe('finishing');
+    expect(eventCodes(r.events)).toEqual(['FAIL:NOT_LOW_ENOUGH']);
+  });
+
+  it('stopping in the good zone advances to locked for plunger press', () => {
+    const r = tryStopDescent(base, GOOD_DESCENT_MS);
+    expect(r.nextState.interactionPhase).toBe('locked');
+    expect(r.nextState.failure).toBeUndefined();
+  });
+
+  it('stopping (or auto-firing) past GOOD_TO_PUNCTURE_MS fires PUNCTURE', () => {
+    const r = tryStopDescent(base, PUNCTURE_DESCENT_MS);
+    expect(r.nextState.failure).toBe('PUNCTURE');
+    expect(eventCodes(r.events)).toEqual(['FAIL:PUNCTURE']);
+  });
+
+  it('is a no-op outside descending LOAD_WELL', () => {
+    expect(tryStopDescent(state(), GOOD_DESCENT_MS).nextState).toEqual({});
+    expect(tryStopDescent(state({ ...base, interactionPhase: 'locked' }), GOOD_DESCENT_MS).nextState).toEqual({});
   });
 });
 
@@ -192,6 +282,13 @@ describe('tryAct (draw, DRAW_SAMPLE)', () => {
     const r = tryAct(drawState(), curveFor(ABORTED_PRESS_MS));
     expect(r.nextState.interactionPhase).toBe('free');
     expect(r.nextState.liquidInTip).toBeUndefined();
+  });
+
+  it('short press fires SHORT_DRAW failure (no liquid)', () => {
+    const r = tryAct(drawState(), curveFor(SHORT_PRESS_MS));
+    expect(r.nextState.failure).toBe('SHORT_DRAW');
+    expect(r.nextState.liquidInTip).toBeUndefined();
+    expect(eventCodes(r.events)).toContain('FAIL:SHORT_DRAW');
   });
 
   it('soft press fills the tip and advances to LOAD_WELL', () => {
@@ -265,6 +362,13 @@ describe('tryAct (eject, LOAD_WELL)', () => {
     expect(r.nextState.dnaInWells).toBeUndefined();
   });
 
+  it('short press also returns to free without firing a failure', () => {
+    const r = tryAct(loadState(), curveFor(SHORT_PRESS_MS));
+    expect(r.nextState.interactionPhase).toBe('free');
+    expect(r.nextState.failure).toBeUndefined();
+    expect(r.nextState.dnaInWells).toBeUndefined();
+  });
+
   it('hard press delivers full volume and advances to DISCARD_TIP', () => {
     const r = tryAct(loadState(), curveFor(HARD_PRESS_MS));
     expect(r.nextState.dnaInWells?.[0]).toBe(1);
@@ -301,37 +405,36 @@ describe('tryAct (eject, LOAD_WELL)', () => {
 
   it('preserves liquidSourceIndex on partial (soft) eject', () => {
     const r = tryAct(loadState(), curveFor(SOFT_PRESS_MS));
-    expect(r.nextState.liquidSourceIndex).toBe(0); // unchanged from baseline
+    expect(r.nextState.liquidSourceIndex).toBe(0);
   });
 });
 
-// ─── tryAct: discard ────────────────────────────────────────────────────
+// ─── tryAct: routing ────────────────────────────────────────────────────
 
-describe('tryAct (discard, DISCARD_TIP)', () => {
-  const base = state({
-    step: WorkflowStep.DISCARD_TIP,
-    hasTip: true,
-    liquidInTip: 0.2, // residual
-    interactionPhase: 'acting',
-    lockedTarget: { kind: 'trash' },
+describe('tryAct routing', () => {
+  it('is a no-op for GET_TIP (tap-driven, not plunger-driven)', () => {
+    const r = tryAct(
+      state({
+        step: WorkflowStep.GET_TIP,
+        interactionPhase: 'acting',
+        lockedTarget: { kind: 'tip-rack' },
+      }),
+      curveFor(SOFT_PRESS_MS),
+    );
+    expect(r.nextState).toEqual({});
   });
 
-  it('aborted press returns to free without discarding', () => {
-    const r = tryAct(base, curveFor(ABORTED_PRESS_MS));
-    expect(r.nextState.hasTip).toBeUndefined();
-    expect(r.nextState.interactionPhase).toBe('free');
-  });
-
-  it('soft press discards the tip and clears residual liquid', () => {
-    const r = tryAct(base, curveFor(SOFT_PRESS_MS));
-    expect(r.nextState.hasTip).toBe(false);
-    expect(r.nextState.liquidInTip).toBe(0);
-    expect(r.nextState.liquidSourceIndex).toBeNull();
-  });
-
-  it('hard press also discards (no soft/hard distinction)', () => {
-    const r = tryAct(base, curveFor(HARD_PRESS_MS));
-    expect(r.nextState.hasTip).toBe(false);
+  it('is a no-op for DISCARD_TIP (tap-driven, not plunger-driven)', () => {
+    const r = tryAct(
+      state({
+        step: WorkflowStep.DISCARD_TIP,
+        hasTip: true,
+        interactionPhase: 'acting',
+        lockedTarget: { kind: 'trash' },
+      }),
+      curveFor(SOFT_PRESS_MS),
+    );
+    expect(r.nextState).toEqual({});
   });
 });
 
@@ -372,6 +475,18 @@ describe('advanceFromFinishing', () => {
     expect(eventCodes(r.events)).toEqual(['CYCLE_COMPLETE', 'RUN_READY']);
   });
 
+  it('clears descentMs and tapCount on every cycle transition', () => {
+    const r = advanceFromFinishing(
+      state({
+        step: WorkflowStep.LOAD_WELL,
+        interactionPhase: 'finishing',
+        descentMs: 850,
+      }),
+    );
+    expect(r.nextState.descentMs).toBe(0);
+    expect(r.nextState.tapCount).toBe(0);
+  });
+
   it('is a no-op when failure is set (player must reset first)', () => {
     const r = advanceFromFinishing(
       state({ step: WorkflowStep.DRAW_SAMPLE, interactionPhase: 'finishing', failure: 'HARD_STOP_TO_DRAW' }),
@@ -399,6 +514,8 @@ describe('reset', () => {
     expect(init.failure).toBeNull();
     expect(init.interactionPhase).toBe('free');
     expect(init.lockedTarget).toBeNull();
+    expect(init.descentMs).toBe(0);
+    expect(init.tapCount).toBe(0);
   });
 
   it('clears a failure', () => {
@@ -422,15 +539,15 @@ describe('integration — happy path through 4 wells', () => {
       const tube: HoverTarget = { kind: 'sample', index: i };
       const well: HoverTarget = { kind: 'well', index: i };
 
-      // GET_TIP: lock → simulate camera commit → act → finish
+      // GET_TIP: lock → simulate camera commit (locked) → tap pickup → finish
       s = applyResult(s, tryLockOnto(s, { kind: 'tip-rack' }));
-      s = applyPatch(s, { interactionPhase: 'acting' });
-      s = applyResult(s, tryAct(s, curveFor(SOFT_PRESS_MS)));
+      s = applyPatch(s, { interactionPhase: 'locked' });
+      s = applyResult(s, tryTapPickup(s, true));
       s = applyResult(s, advanceFromFinishing(s));
       expect(s.step).toBe(WorkflowStep.DRAW_SAMPLE);
       expect(s.hasTip).toBe(true);
 
-      // DRAW_SAMPLE
+      // DRAW_SAMPLE: lock → committing → locked → acting → finish
       s = applyResult(s, tryLockOnto(s, tube));
       s = applyPatch(s, { interactionPhase: 'acting' });
       s = applyResult(s, tryAct(s, curveFor(SOFT_PRESS_MS)));
@@ -438,18 +555,21 @@ describe('integration — happy path through 4 wells', () => {
       expect(s.step).toBe(WorkflowStep.LOAD_WELL);
       expect(s.liquidInTip).toBe(1);
 
-      // LOAD_WELL
+      // LOAD_WELL: lock → committing → descending → stop in good zone → locked → acting → finish
       s = applyResult(s, tryLockOnto(s, well));
+      s = applyPatch(s, { interactionPhase: 'descending' });
+      s = applyResult(s, tryStopDescent(s, GOOD_DESCENT_MS));
+      expect(s.interactionPhase).toBe('locked');
       s = applyPatch(s, { interactionPhase: 'acting' });
       s = applyResult(s, tryAct(s, curveFor(HARD_PRESS_MS)));
       s = applyResult(s, advanceFromFinishing(s));
       expect(s.step).toBe(WorkflowStep.DISCARD_TIP);
       expect(s.dnaInWells[i]).toBe(1);
 
-      // DISCARD_TIP
+      // DISCARD_TIP: lock → locked → tap discard → finish
       s = applyResult(s, tryLockOnto(s, { kind: 'trash' }));
-      s = applyPatch(s, { interactionPhase: 'acting' });
-      s = applyResult(s, tryAct(s, curveFor(SOFT_PRESS_MS)));
+      s = applyPatch(s, { interactionPhase: 'locked' });
+      s = applyResult(s, tryTapDiscard(s));
       s = applyResult(s, advanceFromFinishing(s));
       expect(s.hasTip).toBe(false);
     }
@@ -467,11 +587,10 @@ describe('safety invariants', () => {
   it('INV-2: activeStep is monotone non-decreasing across rule applications', () => {
     let s: RuleState = initialRuleState();
     const seen: number[] = [s.activeStep];
-    // Run 2 full cycles to bump activeStep
     for (let i = 0; i < 2; i++) {
       s = applyPatch(s, tryLockOnto(s, { kind: 'tip-rack' }).nextState);
-      s = applyPatch(s, { interactionPhase: 'acting' });
-      s = applyPatch(s, tryAct(s, curveFor(SOFT_PRESS_MS)).nextState);
+      s = applyPatch(s, { interactionPhase: 'locked' });
+      s = applyPatch(s, tryTapPickup(s, true).nextState);
       s = applyPatch(s, advanceFromFinishing(s).nextState);
       seen.push(s.activeStep);
 
@@ -482,21 +601,23 @@ describe('safety invariants', () => {
       seen.push(s.activeStep);
 
       s = applyPatch(s, tryLockOnto(s, { kind: 'well', index: i }).nextState);
+      s = applyPatch(s, { interactionPhase: 'descending' });
+      s = applyPatch(s, tryStopDescent(s, GOOD_DESCENT_MS).nextState);
       s = applyPatch(s, { interactionPhase: 'acting' });
       s = applyPatch(s, tryAct(s, curveFor(HARD_PRESS_MS)).nextState);
       s = applyPatch(s, advanceFromFinishing(s).nextState);
       seen.push(s.activeStep);
 
       s = applyPatch(s, tryLockOnto(s, { kind: 'trash' }).nextState);
-      s = applyPatch(s, { interactionPhase: 'acting' });
-      s = applyPatch(s, tryAct(s, curveFor(SOFT_PRESS_MS)).nextState);
+      s = applyPatch(s, { interactionPhase: 'locked' });
+      s = applyPatch(s, tryTapDiscard(s).nextState);
       s = applyPatch(s, advanceFromFinishing(s).nextState);
       seen.push(s.activeStep);
     }
     for (let i = 1; i < seen.length; i++) {
       expect(seen[i]).toBeGreaterThanOrEqual(seen[i - 1]);
     }
-    expect(seen[seen.length - 1]).toBe(2); // ran 2 cycles → activeStep = 2
+    expect(seen[seen.length - 1]).toBe(2);
   });
 
   it('INV-3: reset() clears any failure', () => {
@@ -513,7 +634,6 @@ describe('safety invariants', () => {
 
   it('INV-4: warnings is append-only across rule applications (between resets)', () => {
     let s = initialRuleState();
-    // Lock-and-draw from wrong tube to record a WRONG_TUBE
     s = applyPatch(s, { step: WorkflowStep.DRAW_SAMPLE, hasTip: true });
     s = applyPatch(s, tryLockOnto(s, { kind: 'sample', index: 2 }).nextState);
     s = applyPatch(s, { interactionPhase: 'acting' });
@@ -521,7 +641,6 @@ describe('safety invariants', () => {
     s = applyPatch(s, r1.nextState);
     expect(s.warnings.length).toBe(1);
 
-    // No subsequent rule strips warnings (advanceFromFinishing leaves them).
     s = applyPatch(s, advanceFromFinishing(s).nextState);
     expect(s.warnings.length).toBe(1);
   });

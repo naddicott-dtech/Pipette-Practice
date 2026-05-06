@@ -48,6 +48,26 @@ export const FAILURE_COPY: Record<FailureCode | WarningCode, FailureCopy> = {
     body: "You loaded into a position that doesn't match the active step. In a real lab this isn't a failure — but only if you write it down. The convention is sample N → well N; if you deviate, you must document which sample sits in which lane.",
     hint: 'Good lab practice: take a written note of well contents either way. If you swap the order, that note becomes essential.',
   },
+  SHORT_DRAW: {
+    title: 'Drew without reaching the soft stop',
+    body: "You released the plunger well before the soft-stop click. The pipette only displaces a fraction of the air it needs to, so the volume drawn is way below 20 µL — the lane will run faint or not at all.",
+    hint: 'Hold Space until you feel and hear the click, then release. Brief taps don\'t draw a clean volume.',
+  },
+  NOT_LOW_ENOUGH: {
+    title: "Tip didn't reach the well",
+    body: 'You stopped the descent above the agar — the tip would dispense into the buffer, not into the well. The DNA disperses and the lane shows nothing.',
+    hint: 'Watch the tip on its way down. Press Space when it sits inside the well, below the buffer surface but above the agar.',
+  },
+  PUNCTURE: {
+    title: 'Punctured the gel',
+    body: "You let the tip travel too far. Pushing through the agar tears the well wall — DNA leaks into the slab and the lane is unusable.",
+    hint: 'Press Space to stop the descent before the tip reaches the bottom of the well.',
+  },
+  LOOSE_TIP: {
+    title: 'Tip seated loosely',
+    body: 'You only tapped once — the tip is on, but it isn\'t firmly seated. In a real lab a loose tip can leak air or fall off mid-transfer.',
+    hint: "Tap Space three times in quick succession to seat the tip firmly. The technique is 'tap-tap-tap' — Lawrence Livermore standard.",
+  },
 };
 
 /** Failure codes that halt the workflow and require `reset()`. */
@@ -55,6 +75,9 @@ export const FAILURE_CODES: FailureCode[] = [
   'NO_TIP',
   'HARD_STOP_TO_DRAW',
   'EMPTY_EJECT',
+  'SHORT_DRAW',
+  'NOT_LOW_ENOUGH',
+  'PUNCTURE',
 ];
 
 /** Warning codes that allow progress with a degraded lane. */
@@ -62,4 +85,5 @@ export const WARNING_CODES: WarningCode[] = [
   'SOFT_STOP_TO_EJECT',
   'NO_FRESH_TIP',
   'WRONG_TUBE',
+  'LOOSE_TIP',
 ];

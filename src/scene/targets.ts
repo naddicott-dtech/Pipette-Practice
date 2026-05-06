@@ -15,9 +15,11 @@ export const TIP_RACK: Target = {
   radius: 1.5,
 };
 
+// 250 mL beaker behind the tip rack (top-left zone in the OVERVIEW
+// camera). -Z is "back" of the table from the player's POV.
 export const TRASH: Target = {
-  position: [-5, 0, -2],
-  radius: 1.0,
+  position: [-5, 0, -2.5],
+  radius: 0.9,
 };
 
 const SAMPLE_BASE_X = -3;

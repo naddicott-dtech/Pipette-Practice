@@ -14,10 +14,14 @@ export interface PlungerCurve {
   peakDepth: number;
 }
 
-export type PlungerOutcome = 'aborted' | 'soft' | 'hard';
+export type PlungerOutcome = 'aborted' | 'short' | 'soft' | 'hard';
 
-/** Player-intent verbs the plunger can perform, decided by workflow step. */
-export type PlungerAction = 'pickup' | 'draw' | 'eject' | 'discard';
+/**
+ * Player-intent verbs the plunger can perform. Pickup and discard are
+ * tap-driven (not plunger-driven) since the 2026-05-06 follow-up — only
+ * draw and eject still use the plunger curve.
+ */
+export type PlungerAction = 'draw' | 'eject';
 
 /** End of the soft-stop pause window — the curve resumes climbing here. */
 const SOFT_PAUSE_END_MS =
@@ -81,19 +85,12 @@ export function plungerDepthFromHoldMs(holdMs: number): number {
 }
 
 /**
- * Classify a completed press by peak depth.
- *
- *   peakDepth ≥ HARD_OUTCOME_THRESHOLD                      → 'hard'
- *   peakDepth ≥ SOFT_OUTCOME_THRESHOLD (and < HARD)         → 'soft'
- *   otherwise                                                → 'aborted'
- *
- * Because the depth function is monotone in hold duration, peakDepth ≥
- * SOFT_STOP implies the soft-stop was crossed; we don't track that
- * separately. (The driver can fire the audio click on the first frame
- * where current depth crosses SOFT_STOP.)
+ * Classify a completed press by peak depth. Bands are documented on
+ * PLUNGER in config.ts.
  */
 export function plungerOutcome(curve: PlungerCurve): PlungerOutcome {
   if (curve.peakDepth >= PLUNGER.HARD_OUTCOME_THRESHOLD) return 'hard';
   if (curve.peakDepth >= SOFT_OUTCOME_THRESHOLD) return 'soft';
+  if (curve.peakDepth >= PLUNGER.SHORT_OUTCOME_THRESHOLD) return 'short';
   return 'aborted';
 }

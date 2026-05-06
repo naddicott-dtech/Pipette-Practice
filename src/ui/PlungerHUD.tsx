@@ -25,10 +25,15 @@ export function PlungerHUD() {
   const peakDepth = useStore((s) => s.plungerCurve.peakDepth);
   const liquidInTip = useStore((s) => s.liquidInTip);
 
+  // Only show during plunger-driven steps. GET_TIP/DISCARD_TIP are
+  // tap-driven (no plunger curve) so the HUD would just sit at 0%.
+  const plungerStep =
+    step === WorkflowStep.DRAW_SAMPLE || step === WorkflowStep.LOAD_WELL;
   const visible =
-    interactionPhase === 'locked' ||
-    interactionPhase === 'acting' ||
-    interactionPhase === 'finishing';
+    plungerStep &&
+    (interactionPhase === 'locked' ||
+      interactionPhase === 'acting' ||
+      interactionPhase === 'finishing');
 
   const target = targetForStep(step);
 

@@ -34,8 +34,8 @@ describe('FAILURE_COPY completeness', () => {
     }
   });
 
-  it('three failure codes and three warning codes (per Decision Log)', () => {
-    expect(FAILURE_CODES).toHaveLength(3);
-    expect(WARNING_CODES).toHaveLength(3);
+  it('six failure codes and four warning codes (post-2026-05-06 follow-up)', () => {
+    expect(FAILURE_CODES).toHaveLength(6);
+    expect(WARNING_CODES).toHaveLength(4);
   });
 });
