@@ -6,6 +6,7 @@ import { Prompt } from '../ui/Prompt';
 import { PlungerHUD } from '../ui/PlungerHUD';
 import { FailureModal } from '../ui/FailureModal';
 import { LabNotebook } from '../ui/LabNotebook';
+import { WarningToast } from '../ui/WarningToast';
 
 /**
  * Glue layer for HTML overlays. The rotated-slider UI from C0–C2 is
@@ -54,6 +55,7 @@ export function UIOverlay() {
       <PlungerHUD />
       <FailureModal />
       <LabNotebook />
+      <WarningToast />
 
       {/* Bottom controls — RUN / COMPLETE actions only; lock-and-act
           is keyboard/mouse via PlungerController. */}

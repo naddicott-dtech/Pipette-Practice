@@ -60,12 +60,17 @@ export type FailureCode =
   | 'NOT_LOW_ENOUGH'
   | 'PUNCTURE';
 
-/** Active warning modes. LOOSE_TIP added in the 2026-05-06 follow-up. */
+/**
+ * Active warning modes. LOOSE_TIP added 2026-05-06; OVERDRAW added
+ * 2026-05-08 to surface "drew past the click without reaching hard
+ * stop" — the PlungerHUD red zone that was previously silent on DRAW.
+ */
 export type WarningCode =
   | 'SOFT_STOP_TO_EJECT'
   | 'NO_FRESH_TIP'
   | 'WRONG_TUBE'
-  | 'LOOSE_TIP';
+  | 'LOOSE_TIP'
+  | 'OVERDRAW';
 
 /** A warning recorded against a specific lane (well index). */
 export interface WarningRecord {

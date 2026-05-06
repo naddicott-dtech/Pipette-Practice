@@ -37,6 +37,9 @@ function curveFor(holdMs: number): PlungerCurve {
 const SOFT_PRESS_MS = PLUNGER.HOLD_TO_SOFT_MS + Math.floor(PLUNGER.SOFT_STOP_RESISTANCE_MS / 2);
 const HARD_PRESS_MS = PLUNGER.HOLD_TO_HARD_MS;
 const SHORT_PRESS_MS = Math.floor(PLUNGER.HOLD_TO_SOFT_MS * 0.4); // ≈40% of soft → 'short'
+// 900ms hold lands in the overshoot band (peakDepth ≈ 0.83 — past
+// SOFT_STOP + tolerance, before HARD_OUTCOME_THRESHOLD).
+const OVERSHOOT_PRESS_MS = 900;
 const ABORTED_PRESS_MS = 50; // ≈8% of soft → 'aborted'
 
 const GOOD_DESCENT_MS =
@@ -306,6 +309,19 @@ describe('tryAct (draw, DRAW_SAMPLE)', () => {
     expect(eventCodes(r.events)).toContain('FAIL:HARD_STOP_TO_DRAW');
   });
 
+  it('overshoot press fires OVERDRAW warning AND completes the draw', () => {
+    // 2026-05-08: closes the gap where the PlungerHUD's red zone
+    // (peakDepth past SOFT + tolerance, before HARD threshold) was
+    // silent on DRAW. Volume still fills (the air column did seal),
+    // but the lane is flagged as having extra sample.
+    const r = tryAct(drawState(), curveFor(OVERSHOOT_PRESS_MS));
+    expect(r.nextState.liquidInTip).toBe(1);
+    expect(r.nextState.failure).toBeUndefined();
+    expect(eventCodes(r.events)).toContain('WARN:OVERDRAW');
+    expect(eventCodes(r.events)).toContain('STEP_ADVANCED');
+    expect(r.nextState.warnings).toEqual([{ code: 'OVERDRAW', lane: 0 }]);
+  });
+
   it('drawing from the wrong tube fires WRONG_TUBE warning but still draws', () => {
     const r = tryAct(
       drawState({ activeStep: 1, lockedTarget: { kind: 'sample', index: 2 } }),
@@ -387,6 +403,20 @@ describe('tryAct (eject, LOAD_WELL)', () => {
     expect(r.nextState.dnaInWells?.[0]).toBe(0.5);
     expect(r.nextState.liquidInTip).toBe(0.5);
     expect(eventCodes(r.events)).toContain('WARN:SOFT_STOP_TO_EJECT');
+  });
+
+  it('overshoot press also delivers half volume and fires SOFT_STOP_TO_EJECT', () => {
+    // For LOAD, overshoot is "past the click but didn't reach the
+    // hard stop" — same partial-delivery outcome as soft, since the
+    // blow-out only happens at the hard stop. Without this, LOAD's
+    // amber HUD zone could mislead players into thinking they got
+    // more delivery than they actually did.
+    const r = tryAct(loadState(), curveFor(OVERSHOOT_PRESS_MS));
+    expect(r.nextState.dnaInWells?.[0]).toBe(0.5);
+    expect(r.nextState.liquidInTip).toBe(0.5);
+    expect(eventCodes(r.events)).toContain('WARN:SOFT_STOP_TO_EJECT');
+    // OVERDRAW is DRAW-only — never fires on LOAD.
+    expect(eventCodes(r.events)).not.toContain('WARN:OVERDRAW');
   });
 
   it('ejecting an empty tip fires EMPTY_EJECT failure', () => {

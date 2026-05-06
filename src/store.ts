@@ -87,6 +87,15 @@ interface SimulationState {
   setPointer: (p: { x: number; z: number } | null) => void;
   setHoverTarget: (t: HoverTarget) => void;
   reset: () => void;
+  /**
+   * Per-cycle retry. Clears only the active cycle's state — the
+   * failed lane's DNA / source, the pipette's tip + liquid, the
+   * interaction phase, and any warnings recorded against this cycle.
+   * Rebuilds usedTubes from wellSources so a successful draw before
+   * a failed eject doesn't trigger a spurious NO_FRESH_TIP on retry.
+   * Preserves activeStep, prior cycles' wells, and the run state.
+   */
+  retryCycle: () => void;
 }
 
 // Module-level initial state. Primitive values are shared safely; arrays
@@ -173,6 +182,39 @@ export const useStore = create<SimulationState>((set) => ({
       usedTubes: [],
       warnings: [],
       plungerCurve: emptyCurve(),
+    }),
+  retryCycle: () =>
+    set((s) => {
+      const { activeStep } = s;
+      const nextWells = [...s.dnaInWells];
+      nextWells[activeStep] = 0;
+      const nextSources = [...s.wellSources];
+      nextSources[activeStep] = null;
+      // Rebuild usedTubes from the (post-clear) wellSources so a
+      // successful draw before a failed eject doesn't leave the
+      // tube marked as "already used" on the retry.
+      const nextUsedTubes = nextSources.filter(
+        (src): src is number => src !== null,
+      );
+      // Drop any warning recorded against this cycle's lane — those
+      // came from the failed attempt that's now being undone.
+      const nextWarnings = s.warnings.filter((w) => w.lane !== activeStep);
+      return {
+        step: WorkflowStep.GET_TIP,
+        hasTip: false,
+        liquidInTip: 0,
+        liquidSourceIndex: null,
+        dnaInWells: nextWells,
+        wellSources: nextSources,
+        usedTubes: nextUsedTubes,
+        warnings: nextWarnings,
+        failure: null,
+        interactionPhase: 'free',
+        lockedTarget: null,
+        descentMs: 0,
+        tapCount: 0,
+        plungerCurve: emptyCurve(),
+      };
     }),
 }));
 

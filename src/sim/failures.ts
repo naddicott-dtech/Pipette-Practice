@@ -73,6 +73,11 @@ export const FAILURE_COPY: Record<FailureCode | WarningCode, FailureCopy> = {
     body: 'You only tapped once — the tip is on, but it isn\'t firmly seated. In a real lab a loose tip can leak air or fall off mid-transfer.',
     hint: "Tap Space three times in quick succession to seat the tip firmly. The technique is 'tap-tap-tap' — Lawrence Livermore standard.",
   },
+  OVERDRAW: {
+    title: 'Drew past the click',
+    body: 'You held the plunger past the soft-stop click. The pipette displaces extra air, so on release you take up more sample than the lab protocol calls for. The lane will run with a fatter, brighter band than the others — useful in the gel image, harder to interpret on the bench.',
+    hint: 'Release as soon as you feel the click. The PlungerHUD turns red once you\'ve gone past the soft stop.',
+  },
 };
 
 /** Failure codes that halt the workflow and require `reset()`. */
@@ -92,4 +97,5 @@ export const WARNING_CODES: WarningCode[] = [
   'NO_FRESH_TIP',
   'WRONG_TUBE',
   'LOOSE_TIP',
+  'OVERDRAW',
 ];
