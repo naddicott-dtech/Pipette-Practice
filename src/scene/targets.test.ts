@@ -11,10 +11,14 @@ describe('scene targets', () => {
     expect(SAMPLE_TUBES).toHaveLength(WORKFLOW.WELL_COUNT);
   });
 
-  it('wells are sorted by x and non-overlapping', () => {
+  it('wells line up along z (same x) and are non-overlapping along z', () => {
+    // Post-2026-05-06 layout: wells sit on the chamber's right edge,
+    // stacked along the Z axis. A real gel box has wells on one short
+    // edge — this matches that.
     for (let i = 1; i < WELLS.length; i++) {
-      const dx = WELLS[i].position[0] - WELLS[i - 1].position[0];
-      expect(dx).toBeGreaterThan(WELLS[i].radius + WELLS[i - 1].radius - 0.01);
+      expect(WELLS[i].position[0]).toBe(WELLS[0].position[0]);
+      const dz = WELLS[i].position[2] - WELLS[i - 1].position[2];
+      expect(dz).toBeGreaterThan(WELLS[i].radius + WELLS[i - 1].radius - 0.01);
     }
   });
 
