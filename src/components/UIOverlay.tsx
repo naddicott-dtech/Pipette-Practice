@@ -1,12 +1,13 @@
 import React from 'react';
 import { useStore, WorkflowStep } from '../store';
 import { motion } from 'motion/react';
-import { Pipette as PipetteIcon, Play, RefreshCcw, CheckCircle2 } from 'lucide-react';
+import { Pipette as PipetteIcon, Play, RefreshCcw } from 'lucide-react';
 import { Prompt } from '../ui/Prompt';
 import { PlungerHUD } from '../ui/PlungerHUD';
 import { FailureModal } from '../ui/FailureModal';
 import { LabNotebook } from '../ui/LabNotebook';
 import { WarningToast } from '../ui/WarningToast';
+import { Debrief } from '../ui/Debrief';
 
 /**
  * Glue layer for HTML overlays. The rotated-slider UI from C0–C2 is
@@ -56,9 +57,10 @@ export function UIOverlay() {
       <FailureModal />
       <LabNotebook />
       <WarningToast />
+      <Debrief />
 
-      {/* Bottom controls — RUN / COMPLETE actions only; lock-and-act
-          is keyboard/mouse via PlungerController. */}
+      {/* Bottom controls — RUN_GEL only. The COMPLETE state is handled
+          by the Debrief modal above. */}
       <div className="flex justify-center items-end pointer-events-auto">
         {step === WorkflowStep.RUN_GEL && (
           <motion.button
@@ -80,19 +82,6 @@ export function UIOverlay() {
             <Play className="w-6 h-6 fill-current" />
             START POWER SUPPLY
           </motion.button>
-        )}
-
-        {step === WorkflowStep.COMPLETE && (
-          <div className="bg-green-900/40 p-4 rounded-2xl border border-green-500/30 mb-4 max-w-md flex gap-3 items-center">
-            <CheckCircle2 className="w-10 h-10 text-green-400 shrink-0" />
-            <div>
-              <h3 className="font-bold text-green-400">Loading Successful!</h3>
-              <p className="text-sm text-neutral-200">
-                The DNA is separating by size. Smaller fragments move faster
-                toward the positive electrode.
-              </p>
-            </div>
-          </div>
         )}
       </div>
     </div>
