@@ -8,6 +8,7 @@ import {
   tryTapPickup,
   tryTapDiscard,
   tryStopDescent,
+  tickRun,
   advanceFromFinishing,
   type Result,
 } from '../sim/rules';
@@ -221,6 +222,17 @@ export function PlungerController() {
       }
     } else if (finishingEnteredAt.current !== null) {
       finishingEnteredAt.current = null;
+    }
+
+    // RUN_GEL → COMPLETE: keep ticking the run while we're in RUN_GEL.
+    // tickRun is a no-op below RUN_DURATION_MS and idempotent above it,
+    // so calling it every frame is safe.
+    if (state.step === WorkflowStep.RUN_GEL && state.runStartedAt !== null) {
+      const elapsed = performance.now() - state.runStartedAt;
+      const result = tickRun(selectRuleState(state), elapsed);
+      if (Object.keys(result.nextState).length > 0) {
+        applyResult(state, result);
+      }
     }
   });
 

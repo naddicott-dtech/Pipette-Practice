@@ -1,10 +1,13 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef } from 'react';
+import { useFrame } from '@react-three/fiber';
+import * as THREE from 'three';
 import { Text } from '@react-three/drei';
 import { useStore, WorkflowStep } from '../store';
-import { WORKFLOW } from '../sim/config';
+import { WORKFLOW, RUN_DURATION_MS } from '../sim/config';
 import { WELLS } from '../scene/targets';
 import { wellHighlight } from '../scene/wellHighlight';
 import { SCENE_LANDMARKS } from '../scene/sceneGeometry';
+import { BAND_PATTERNS } from '../scene/bandPatterns';
 
 const GEL_ORIGIN: [number, number, number] = [3, 0, 0];
 
@@ -233,12 +236,14 @@ function Well({ id, x, y, z, isBoxOn }: WellProps) {
         </Text>
       )}
 
-      {/* Migration bands. Bands now travel along -X (toward the +
-          electrode at world x=-1). The setInterval pattern lives until
-          C6 replaces it with a useFrame-driven animation. */}
+      {/* Migration bands — bands travel along -X (toward the +
+          electrode at world x=-1). Each lane sources its band offsets
+          from BAND_PATTERNS so lane 2 and lane 4 (same sample) produce
+          identical patterns. Animation is a single useFrame keyed off
+          runStartedAt — no per-band setInterval. */}
       {isBoxOn && dna > 0 && (
         <group>
-          {[0.4, 0.7, 1.2, 1.8].map((offset, j) => (
+          {(BAND_PATTERNS[id] ?? []).map((offset, j) => (
             <Band key={j} offset={offset} />
           ))}
         </group>
@@ -247,18 +252,30 @@ function Well({ id, x, y, z, isBoxOn }: WellProps) {
   );
 }
 
+/**
+ * One DNA band. Final position along -X is `offset`; current position
+ * interpolates linearly with elapsed run time. Reads `runStartedAt`
+ * from the store inside the frame loop (not as a hook subscription) so
+ * each frame produces a fresh `now - runStartedAt` without re-rendering
+ * the whole `Well` subtree on every store mutation.
+ */
 function Band({ offset }: { offset: number }) {
-  const [pos, setPos] = React.useState(0);
+  const meshRef = useRef<THREE.Mesh>(null);
 
-  React.useEffect(() => {
-    const timer = setInterval(() => {
-      setPos((p) => Math.min(offset, p + 0.01 * (1 / (offset + 1))));
-    }, 50);
-    return () => clearInterval(timer);
-  }, [offset]);
+  useFrame(() => {
+    const m = meshRef.current;
+    if (!m) return;
+    const startedAt = useStore.getState().runStartedAt;
+    if (startedAt === null) {
+      m.position.x = 0;
+      return;
+    }
+    const t = Math.min(1, Math.max(0, (performance.now() - startedAt) / RUN_DURATION_MS));
+    m.position.x = -t * offset;
+  });
 
   return (
-    <mesh position={[-pos, -0.05, 0]}>
+    <mesh ref={meshRef} position={[0, -0.05, 0]}>
       <boxGeometry args={[0.1, 0.02, 0.7]} />
       <meshStandardMaterial color="#4c1d95" opacity={0.8} transparent />
     </mesh>

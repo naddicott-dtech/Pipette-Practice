@@ -79,6 +79,13 @@ export const LOCK = {
   COMMIT_HOLD_MS: 0,
 } as const;
 
+/**
+ * Total wall-clock time a gel run takes from "Start Power Supply" press
+ * to COMPLETE. Drives both the band animation in GelBox and the
+ * RUN_GEL → COMPLETE transition in tickRun (src/sim/rules.ts).
+ */
+export const RUN_DURATION_MS = 5_000;
+
 export const CAMERA = {
   OVERVIEW: { position: [8, 8, 12] as const, fov: 35, lookAt: [0, 0, 0] as const },
   CLOSEUP:  { position: [2, 2, 6]  as const, fov: 28, lookAt: [0, 0, 0] as const },

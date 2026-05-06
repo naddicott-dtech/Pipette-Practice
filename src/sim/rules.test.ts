@@ -8,6 +8,7 @@ import {
   tryTapPickup,
   tryTapDiscard,
   tryStopDescent,
+  tickRun,
   advanceFromFinishing,
   applyPatch,
   type Result,
@@ -19,7 +20,7 @@ import {
   type RuleState,
   type HoverTarget,
 } from './types';
-import { PLUNGER, WORKFLOW } from './config';
+import { PLUNGER, WORKFLOW, RUN_DURATION_MS } from './config';
 
 // ─── Test helpers ───────────────────────────────────────────────────────
 
@@ -496,6 +497,40 @@ describe('advanceFromFinishing', () => {
 
   it('is a no-op outside of finishing phase', () => {
     expect(advanceFromFinishing(state({ interactionPhase: 'free' })).nextState).toEqual({});
+  });
+});
+
+// ─── tickRun ────────────────────────────────────────────────────────────
+
+describe('tickRun', () => {
+  const runState = state({ step: WorkflowStep.RUN_GEL });
+
+  it('is a no-op while elapsed < RUN_DURATION_MS', () => {
+    expect(tickRun(runState, 0).nextState).toEqual({});
+    expect(tickRun(runState, RUN_DURATION_MS - 1).nextState).toEqual({});
+  });
+
+  it('advances to COMPLETE at elapsed === RUN_DURATION_MS', () => {
+    const r = tickRun(runState, RUN_DURATION_MS);
+    expect(r.nextState.step).toBe(WorkflowStep.COMPLETE);
+    expect(eventCodes(r.events)).toEqual(['STEP_ADVANCED']);
+  });
+
+  it('still advances if called past the duration (idempotent)', () => {
+    const r = tickRun(runState, RUN_DURATION_MS + 1_000);
+    expect(r.nextState.step).toBe(WorkflowStep.COMPLETE);
+  });
+
+  it('is a no-op outside of RUN_GEL', () => {
+    for (const step of [
+      WorkflowStep.GET_TIP,
+      WorkflowStep.DRAW_SAMPLE,
+      WorkflowStep.LOAD_WELL,
+      WorkflowStep.DISCARD_TIP,
+      WorkflowStep.COMPLETE,
+    ]) {
+      expect(tickRun(state({ step }), RUN_DURATION_MS).nextState).toEqual({});
+    }
   });
 });
 
