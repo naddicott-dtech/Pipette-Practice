@@ -26,7 +26,11 @@ export function Prompt() {
 
   return (
     <div className="absolute left-1/2 top-24 -translate-x-1/2 pointer-events-none flex justify-center">
-      <AnimatePresence>
+      {/* `mode="wait"` so the previous card finishes its exit before
+          the next one mounts — without it, fast workflow transitions
+          (locking → committing → locked) leave 2–3 stale cards stacked
+          at low opacity. */}
+      <AnimatePresence mode="wait">
         {visible && (
           <motion.div
             key={`${copy.text}-${copy.detail ?? ''}`}

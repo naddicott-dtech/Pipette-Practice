@@ -33,7 +33,14 @@ export function UIOverlay() {
         </div>
 
         <button
-          onClick={reset}
+          onClick={(e) => {
+            reset();
+            // Drop focus so the next Space press doesn't re-activate
+            // this button via the browser's default button-Space
+            // behavior — the controller's window keydown handler
+            // owns Space for the workflow.
+            e.currentTarget.blur();
+          }}
           aria-label="Reset run"
           className="bg-white/10 hover:bg-white/20 p-3 rounded-full transition-colors flex items-center gap-2 text-sm"
         >
@@ -55,13 +62,16 @@ export function UIOverlay() {
           <motion.button
             initial={{ y: 50, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
-            onClick={() => {
+            onClick={(e) => {
               // Don't snap-advance to COMPLETE; let tickRun (in
               // PlungerController) flip the step once the run reaches
               // RUN_DURATION_MS. Bands animate via useFrame keyed off
               // runStartedAt.
               setBoxOn(true);
               setRunStartedAt(performance.now());
+              // Drop focus so Space doesn't re-trigger this button —
+              // the workflow's Space handling lives in the controller.
+              e.currentTarget.blur();
             }}
             className="bg-blue-600 hover:bg-blue-500 text-white px-8 py-4 rounded-2xl font-black text-xl flex items-center gap-3 shadow-lg mb-4"
           >

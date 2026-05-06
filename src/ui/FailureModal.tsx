@@ -46,7 +46,12 @@ export function FailureModal() {
             )}
 
             <button
-              onClick={reset}
+              onClick={(e) => {
+                reset();
+                // Drop focus so Space doesn't re-click "Try Again"
+                // mid-workflow — Space is owned by PlungerController.
+                e.currentTarget.blur();
+              }}
               className="bg-red-600 hover:bg-red-500 px-6 py-2 rounded-lg font-bold transition-transform active:scale-95 text-white"
             >
               Try Again

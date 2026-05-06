@@ -47,13 +47,16 @@ export enum WorkflowStep {
  * Active failure modes. Decision Log 2026-05-05 retired NOT_LOW_ENOUGH
  * and PUNCTURE; the 2026-05-06 follow-up reactivated them, scoped to the
  * LOAD_WELL `descending` sub-phase only (see docs/followup-2026-05-06.md).
- * SHORT_DRAW also added in that follow-up.
+ * SHORT_DRAW also added in that follow-up. SHORT_LOAD added 2026-05-08
+ * after a tester report traced empty wells back to silent 'short' ejects
+ * — the player thought they had loaded but the dispense never landed.
  */
 export type FailureCode =
   | 'NO_TIP'
   | 'HARD_STOP_TO_DRAW'
   | 'EMPTY_EJECT'
   | 'SHORT_DRAW'
+  | 'SHORT_LOAD'
   | 'NOT_LOW_ENOUGH'
   | 'PUNCTURE';
 

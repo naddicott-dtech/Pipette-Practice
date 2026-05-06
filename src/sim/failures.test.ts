@@ -34,8 +34,8 @@ describe('FAILURE_COPY completeness', () => {
     }
   });
 
-  it('six failure codes and four warning codes (post-2026-05-06 follow-up)', () => {
-    expect(FAILURE_CODES).toHaveLength(6);
+  it('seven failure codes and four warning codes (post-2026-05-08 SHORT_LOAD)', () => {
+    expect(FAILURE_CODES).toHaveLength(7);
     expect(WARNING_CODES).toHaveLength(4);
   });
 });
