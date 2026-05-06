@@ -15,8 +15,12 @@ import { useStore, WorkflowStep } from '../store';
  *
  * Hover/lock detection lives in InteractionDriver; this is visuals only.
  */
-const BEAKER_HEIGHT = 1.2;
-const BEAKER_RADIUS = 0.6;
+// Exported so config invariants can assert that the trash anchor lands
+// the pipette tip inside the beaker (above the bottom, below the rim).
+export const BEAKER_HEIGHT = 1.2;
+export const BEAKER_RADIUS = 0.6;
+/** World Y of the beaker bottom (the disc) above the table. */
+export const BEAKER_FLOOR_Y = 0.05;
 const FLY_DURATION_MS = 480;
 const FLY_START_Y = 1.6;
 const FLY_END_Y = 0.15;

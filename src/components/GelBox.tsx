@@ -1,25 +1,36 @@
 import React, { useMemo } from 'react';
 import { Text } from '@react-three/drei';
 import { useStore, WorkflowStep } from '../store';
+import { WORKFLOW } from '../sim/config';
 import { WELLS } from '../scene/targets';
 import { wellHighlight } from '../scene/wellHighlight';
 
-const GEL_ORIGIN: [number, number, number] = [3, 0, -1];
+const GEL_ORIGIN: [number, number, number] = [3, 0, 0];
+
+// Chamber dimensions (kept identical to pre-rotation values; the gel
+// chamber is naturally rectangular and these read well from OVERVIEW).
+const BUFFER_SIZE: [number, number, number] = [8, 0.5, 6];
+const SLAB_SIZE: [number, number, number] = [7, 0.3, 5];
+// World y at which the buffer's top surface sits — drawn explicitly as
+// a thin emissive band so the player has a visible water line during
+// the LOAD_WELL descent.
+const BUFFER_SURFACE_Y = 0.25;
 
 /**
- * The electrophoresis chamber. Renders the buffer + gel slab + WELL_COUNT
- * wells. Each well shows:
- *   - active ring (purple) when it matches `activeStep` during LOAD_WELL
- *   - live-hover ring (cyan) when the cursor is over it during LOAD_WELL
- *   - DNA fill block when liquid has been delivered
- *   - migration bands once the run has started
+ * The electrophoresis chamber. Renders the buffer + gel slab +
+ * WELL_COUNT wells. After the 2026-05-06 layout pass:
+ *   - wells line up along Z on the chamber's right edge (world x = 6)
+ *   - "−" sits at the well end, "+" at the far (left) end
+ *   - DNA bands migrate in -X during the run
+ *   - each well shows a persistent gold rim so the wells are visible
+ *     at every workflow step (not just LOAD_WELL)
+ *   - a buffer-surface band marks the water line for descent gauging
  *
- * The two ring styles can fire simultaneously (cursor on the active well)
- * — the cyan ring is slightly larger so they don't z-fight. Mirrors the
- * SampleTubeRack pattern so players read the two racks the same way.
+ * The two highlight ring styles can fire simultaneously (cursor on the
+ * active well) — the cyan ring is slightly larger so they don't z-fight.
  *
- * Each `Well` subscribes to the store separately to avoid full-tree
- * re-renders on every store mutation (the Band animation runs at 20Hz).
+ * Each `Well` subscribes via per-slice selectors to avoid re-rendering
+ * all wells on every store mutation.
  */
 export function GelBox() {
   const isBoxOn = useStore((s) => s.isBoxOn);
@@ -37,15 +48,32 @@ export function GelBox() {
 
   return (
     <group position={GEL_ORIGIN}>
-      {/* Buffer chamber */}
+      {/* Buffer chamber body */}
       <mesh castShadow receiveShadow>
-        <boxGeometry args={[8, 0.5, 6]} />
+        <boxGeometry args={BUFFER_SIZE} />
         <meshStandardMaterial color="#38bdf8" transparent opacity={0.3} />
+      </mesh>
+
+      {/* Visible buffer surface — a thin slab at the water line, sized
+          short of the well column on the right so it doesn't occlude
+          the wells from above. Combined with the well rim and the
+          descent-zone color cue, the player has three landmarks for
+          gauging LOAD_WELL descent: above the water, at the rim, in
+          the well. */}
+      <mesh position={[-1, BUFFER_SURFACE_Y, 0]}>
+        <boxGeometry args={[BUFFER_SIZE[0] - 3, 0.015, BUFFER_SIZE[2] - 0.1]} />
+        <meshStandardMaterial
+          color="#38bdf8"
+          emissive="#38bdf8"
+          emissiveIntensity={0.5}
+          transparent
+          opacity={0.4}
+        />
       </mesh>
 
       {/* Gel slab */}
       <mesh position={[0, -0.1, 0]} castShadow receiveShadow>
-        <boxGeometry args={[7, 0.3, 5]} />
+        <boxGeometry args={SLAB_SIZE} />
         <meshStandardMaterial color="#94a3b8" transparent opacity={0.5} />
       </mesh>
 
@@ -57,20 +85,27 @@ export function GelBox() {
         ELECTROPHORESIS CHAMBER
       </Text>
 
-      {/* Polarity labels */}
+      {/* Polarity labels on the long (X) axis. "−" sits over the wells
+          (right edge, world x=7); "+" sits at the migration target
+          (left edge, world x=-1). Rotated to lie flat on the slab so
+          they read from the OVERVIEW camera. */}
       <Text
-        position={[0, 0.5, 1.8]}
-        fontSize={0.2}
+        position={[4, 0.4, 0]}
+        fontSize={0.4}
         color="#fb7185"
         rotation={[-Math.PI / 2, 0, 0]}
+        anchorX="center"
+        anchorY="middle"
       >
-        -
+        −
       </Text>
       <Text
-        position={[0, 0.5, -2.5]}
-        fontSize={0.2}
+        position={[-4, 0.4, 0]}
+        fontSize={0.4}
         color="#60a5fa"
         rotation={[-Math.PI / 2, 0, 0]}
+        anchorX="center"
+        anchorY="middle"
       >
         +
       </Text>
@@ -91,6 +126,8 @@ function Well({ id, x, y, z, isBoxOn }: WellProps) {
   const step = useStore((s) => s.step);
   const hoverTarget = useStore((s) => s.hoverTarget);
   const dna = useStore((s) => s.dnaInWells[id] ?? 0);
+  const interactionPhase = useStore((s) => s.interactionPhase);
+  const descentMs = useStore((s) => s.descentMs);
 
   const { active, hover, loaded } = wellHighlight(
     id,
@@ -100,6 +137,18 @@ function Well({ id, x, y, z, isBoxOn }: WellProps) {
     dna,
   );
 
+  // Live descent feedback: the active well's rim recolors as the tip
+  // descends through each zone. Gives the player a strong visual signal
+  // for "press now" — without this they have only the timer in their head.
+  const showZoneRim =
+    active && interactionPhase === 'descending';
+  const zoneColor =
+    descentMs < WORKFLOW.DESCENT.HIGH_TO_GOOD_MS
+      ? '#22d3ee' // cyan — too high, keep waiting
+      : descentMs < WORKFLOW.DESCENT.GOOD_TO_PUNCTURE_MS
+        ? '#22c55e' // green — press now
+        : '#ef4444'; // red — about to puncture
+
   // Ghost loaded wells that aren't the current target so the player's
   // attention follows the active step without losing the loaded wells'
   // visible DNA.
@@ -108,10 +157,30 @@ function Well({ id, x, y, z, isBoxOn }: WellProps) {
 
   return (
     <group position={[x, y, z]}>
-      {/* Active-target ring (purple). Sits at the same height as the
-          tube ring on SampleTubeRack so the two racks read the same. */}
+      {/* Persistent gold rim — visible at every workflow step so the
+          wells read as wells against the dark slab. */}
+      <mesh position={[0, 0.11, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[0.24, 0.32, 32]} />
+        <meshBasicMaterial color="#fbbf24" transparent opacity={0.45} />
+      </mesh>
+
+      {/* Descent-zone rim. Only fires on the active well during the
+          'descending' sub-phase. Recolors with the tip's depth zone
+          (cyan → green → red) so the player can press at the green. */}
+      {showZoneRim && (
+        <mesh position={[0, 0.115, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[0.22, 0.34, 32]} />
+          <meshBasicMaterial
+            color={zoneColor}
+            transparent
+            opacity={0.9}
+          />
+        </mesh>
+      )}
+
+      {/* Active-target ring (purple). */}
       {active && (
-        <mesh position={[0, 1, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <mesh position={[0, 0.13, 0]} rotation={[-Math.PI / 2, 0, 0]}>
           <ringGeometry args={[0.32, 0.4, 32]} />
           <meshBasicMaterial color="#a855f7" transparent opacity={0.85} />
         </mesh>
@@ -120,18 +189,20 @@ function Well({ id, x, y, z, isBoxOn }: WellProps) {
       {/* Live-hover ring (cyan), slightly larger so it doesn't z-fight
           the active ring when both fire on the same well. */}
       {hover && (
-        <mesh position={[0, 1.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <mesh position={[0, 0.14, 0]} rotation={[-Math.PI / 2, 0, 0]}>
           <ringGeometry args={[0.42, 0.5, 32]} />
           <meshBasicMaterial color="#22d3ee" transparent opacity={0.8} />
         </mesh>
       )}
 
-      {/* Well hole (the recess in the gel slab) */}
+      {/* Well hole. Solid (transparent: false) when fully opaque so it
+          renders crisply against the transparent slab/buffer; only goes
+          transparent when ghosted as a past lane. */}
       <mesh>
-        <boxGeometry args={[0.8, 0.2, 0.4]} />
+        <boxGeometry args={[0.4, 0.2, 0.8]} />
         <meshStandardMaterial
           color="#1e293b"
-          transparent
+          transparent={isPastLane}
           opacity={wellBodyOpacity}
         />
       </mesh>
@@ -140,27 +211,30 @@ function Well({ id, x, y, z, isBoxOn }: WellProps) {
           (SOFT_STOP_TO_EJECT) ejects look faint. */}
       {dna > 0 && (
         <mesh position={[0, -0.05, 0]}>
-          <boxGeometry args={[0.7, 0.1, 0.3]} />
+          <boxGeometry args={[0.3, 0.1, 0.7]} />
           <meshStandardMaterial color="#4c1d95" opacity={dna} transparent />
         </mesh>
       )}
 
-      {/* Lane label visible during the load phase; helps the player map
-          DNA n → Well n at a glance. */}
-      {step === WorkflowStep.LOAD_WELL && (
+      {/* Lane label visible whenever the well is empty (so empty wells
+          stay readable through the workflow) or during LOAD_WELL (so the
+          active well still announces its number). */}
+      {(dna === 0 || step === WorkflowStep.LOAD_WELL) && (
         <Text
-          position={[0, 0.6, 0]}
-          fontSize={0.15}
+          position={[0.45, 0.2, 0]}
+          fontSize={0.16}
           color={active ? '#a855f7' : 'white'}
-          anchorX="center"
+          anchorX="left"
           anchorY="middle"
+          rotation={[0, -Math.PI / 2, 0]}
         >
           {`Well ${id + 1}`}
         </Text>
       )}
 
-      {/* Migration bands — kept on the existing setInterval pattern for
-          C4. Replaced by useFrame in C6 alongside the run-debrief. */}
+      {/* Migration bands. Bands now travel along -X (toward the +
+          electrode at world x=-1). The setInterval pattern lives until
+          C6 replaces it with a useFrame-driven animation. */}
       {isBoxOn && dna > 0 && (
         <group>
           {[0.4, 0.7, 1.2, 1.8].map((offset, j) => (
@@ -183,8 +257,8 @@ function Band({ offset }: { offset: number }) {
   }, [offset]);
 
   return (
-    <mesh position={[0, -0.05, -pos]}>
-      <boxGeometry args={[0.7, 0.02, 0.1]} />
+    <mesh position={[-pos, -0.05, 0]}>
+      <boxGeometry args={[0.1, 0.02, 0.7]} />
       <meshStandardMaterial color="#4c1d95" opacity={0.8} transparent />
     </mesh>
   );

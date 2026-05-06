@@ -39,18 +39,23 @@ export const SAMPLE_TUBES: IndexedTarget[] = Array.from(
   }),
 );
 
-const GEL_CENTER_X = 3;
+// Wells line up along Z on the right edge of the buffer chamber (chamber
+// centered at GEL_ORIGIN x=3, half-width 4 → right edge at world x=7).
+// Cathode (-) sits at the well end; anode (+) sits at world x=-1 so DNA
+// migrates leftward during RUN_GEL. Real gel boxes have wells on one
+// short edge — this matches that layout from the player's overview POV.
+const WELL_X = 6;
 const WELL_SPACING = 1.2;
-const WELL_Z = 0.5;
+const WELL_Y = 0.05;
 
 export const WELLS: IndexedTarget[] = Array.from(
   { length: WORKFLOW.WELL_COUNT },
   (_, i) => ({
     index: i,
     position: [
-      GEL_CENTER_X + (i - (WORKFLOW.WELL_COUNT - 1) / 2) * WELL_SPACING,
-      0.05,
-      WELL_Z,
+      WELL_X,
+      WELL_Y,
+      (i - (WORKFLOW.WELL_COUNT - 1) / 2) * WELL_SPACING,
     ],
     radius: 0.6,
   }),

@@ -1,5 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { PLUNGER, VOLUME, PIPETTE, WORKFLOW, CAMERA } from './config';
+import {
+  BEAKER_HEIGHT,
+  BEAKER_FLOOR_Y,
+} from '../scene/Trash';
+
+// Distance from the pipette body center to the tip apex. Body cylinder
+// is 3 units tall (centered at group origin); tip group sits at local
+// y=-1.55 with a length-0.9 cone oriented apex-down. Apex local
+// y = -1.55 - 0.45 = -2.0.
+const PIPETTE_BODY_TO_TIP_APEX = 2.0;
 
 describe('config invariants', () => {
   it('plunger thresholds are ordered REST < SOFT_STOP < HARD_STOP', () => {
@@ -61,5 +71,15 @@ describe('config invariants', () => {
 
   it('descent y-coordinates run from above buffer to below agar', () => {
     expect(PIPETTE.Y_DESCENT_START).toBeGreaterThan(PIPETTE.Y_DESCENT_PUNCTURE);
+  });
+
+  it('Y_LOWERED_TRASH lands the tip apex inside the beaker', () => {
+    // Tip apex sits 2.0 below the pipette body center. With body at
+    // Y_LOWERED_TRASH the apex must be above the beaker floor (so it
+    // doesn't poke through the bottom — the bug from the 2026-05-06
+    // regression report) and below the beaker rim.
+    const apexY = PIPETTE.Y_LOWERED_TRASH - PIPETTE_BODY_TO_TIP_APEX;
+    expect(apexY).toBeGreaterThan(BEAKER_FLOOR_Y);
+    expect(apexY).toBeLessThan(BEAKER_FLOOR_Y + BEAKER_HEIGHT);
   });
 });

@@ -120,6 +120,6 @@ function anchorYFor(
         t * (PIPETTE.Y_DESCENT_PUNCTURE - PIPETTE.Y_DESCENT_START);
     }
     case 'trash':
-      return PIPETTE.Y_LOWERED_TIPS;
+      return PIPETTE.Y_LOWERED_TRASH;
   }
 }
