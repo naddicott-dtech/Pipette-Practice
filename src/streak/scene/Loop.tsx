@@ -13,6 +13,8 @@ const H = LOOP.HANDLE_LENGTH;
 // agar. The ring's bottom point sits at the tilt-group origin, which the
 // outer group pins to the cursor on the surface.
 const CONTACT_Y = PLATE.surfaceY + T * Math.cos(TILT);
+// Where the loop floats over the plate when not actively streaking.
+const HOVER_Y = CONTACT_Y + LOOP.HOVER_LIFT;
 
 /**
  * The inoculation loop. The thin straight handle is COPLANAR with the
@@ -30,9 +32,11 @@ export function Loop() {
   useFrame(() => {
     const g = group.current;
     if (!g) return;
-    const { hasLoop, pointer } = useStreakStore.getState();
+    const { hasLoop, pointer, interactionPhase } = useStreakStore.getState();
     if (hasLoop && pointer) {
-      target.current.set(pointer.x, CONTACT_Y, pointer.z);
+      // Lowered to the agar while streaking; floating just above otherwise.
+      const y = interactionPhase === 'acting' ? CONTACT_Y : HOVER_Y;
+      target.current.set(pointer.x, y, pointer.z);
     } else {
       target.current.set(...LOOP.REST_POSITION);
     }

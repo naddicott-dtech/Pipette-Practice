@@ -1,6 +1,7 @@
 import { usePointerWorld } from '../../scene/usePointerWorld';
 import { Table } from '../../scene/Table';
 import { StreakInteractionDriver } from './StreakInteractionDriver';
+import { StreakContactDriver } from './StreakContactDriver';
 import { StreakInputController } from './StreakInputController';
 import { StreakCameraRig } from './StreakCameraRig';
 import { PetriDish } from './PetriDish';
@@ -21,6 +22,7 @@ export function StreakSceneRoot() {
   return (
     <>
       <StreakInteractionDriver pointerRef={pointerRef} />
+      <StreakContactDriver pointerRef={pointerRef} />
       <StreakInputController />
       <StreakCameraRig />
 

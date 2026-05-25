@@ -34,11 +34,11 @@ export function StreakCursor({ pointerRef }: CursorProps) {
     mesh.visible = true;
     mesh.position.set(p.x, 0.02, p.z);
 
-    const { step, hoverTarget } = useStreakStore.getState();
+    const { step, hoverTarget, rotating } = useStreakStore.getState();
     const ready =
       step === StreakStep.GET_LOOP
         ? hoverTarget?.kind === 'loop-holder'
-        : hoverTarget?.kind === 'plate';
+        : hoverTarget?.kind === 'plate' && !rotating;
     mat.color.copy(ready ? READY_COLOR : NOT_READY_COLOR);
   });
 
