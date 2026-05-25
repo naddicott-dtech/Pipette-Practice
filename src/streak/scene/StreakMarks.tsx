@@ -8,9 +8,14 @@ const MAX_INSTANCES = PATH.MAX_STROKES * PATH.MAX_POINTS_PER_STROKE;
 const MARK_Y = PLATE.surfaceY + 0.012;
 
 // Deposit value mapped to a fully "solid" mark; lighter deposits read as
-// faint dots (the diluted tail of a streak → foreshadows isolation).
-const DEPOSIT_NORM = 0.02;
-const MIN_RADIUS = 0.045;
+// faint dots (the diluted tail of a streak → foreshadows isolation). Radius
+// scales with sqrt(deposit), and deposit ∝ the loop's carried load — which
+// roughly halves each quadrant — so successive streaks render visibly
+// thinner without any explicit per-stroke lineage. NORM is set just above
+// a fresh streak's peak deposit (so the first quadrant isn't clamped flat)
+// and the floor is small (so diluted tails taper toward isolated specks).
+const DEPOSIT_NORM = 0.04;
+const MIN_RADIUS = 0.022;
 const MAX_RADIUS = 0.14;
 
 // Earthy amber, darkening with density — deliberately darker than the pale
