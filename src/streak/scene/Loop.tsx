@@ -7,6 +7,8 @@ import { LOOP } from '../sim/config';
 const HALF = LOOP.HANDLE_LENGTH / 2;
 const WIRE_Y = -HALF - 0.2;
 const RING_Y = -HALF - 0.45;
+// Lowest point of the horizontal donut tube, relative to the group origin.
+// Y_HOVER is tuned so this lands on the agar surface.
 
 /**
  * The inoculation loop: a long yellow handle with a thin wire ring at
@@ -40,21 +42,28 @@ export function Loop() {
       position={LOOP.REST_POSITION as unknown as [number, number, number]}
       rotation={[0, 0, LOOP.REST_TILT]}
     >
-      {/* Handle */}
+      {/* Handle — thin gold shaft */}
       <mesh castShadow>
-        <cylinderGeometry args={[0.1, 0.12, LOOP.HANDLE_LENGTH, 16]} />
+        <cylinderGeometry
+          args={[
+            LOOP.HANDLE_RADIUS_TOP,
+            LOOP.HANDLE_RADIUS_BOTTOM,
+            LOOP.HANDLE_LENGTH,
+            16,
+          ]}
+        />
         <meshStandardMaterial color="#fbbf24" roughness={0.4} metalness={0.1} />
       </mesh>
 
       {/* Wire neck */}
       <mesh position={[0, WIRE_Y, 0]}>
-        <cylinderGeometry args={[0.03, 0.03, 0.4, 8]} />
+        <cylinderGeometry args={[0.02, 0.02, 0.4, 8]} />
         <meshStandardMaterial color="#9ca3af" roughness={0.3} metalness={0.8} />
       </mesh>
 
-      {/* Loop ring */}
+      {/* Loop ring — horizontal donut; the tube rests flat on the agar. */}
       <mesh position={[0, RING_Y, 0]} rotation={[Math.PI / 2, 0, 0]} castShadow>
-        <torusGeometry args={[LOOP.RING_RADIUS, LOOP.RING_TUBE, 16, 48]} />
+        <torusGeometry args={[LOOP.RING_RADIUS, LOOP.RING_TUBE, 20, 56]} />
         <meshStandardMaterial color="#9ca3af" roughness={0.3} metalness={0.8} />
       </mesh>
     </group>

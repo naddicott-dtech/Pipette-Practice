@@ -29,14 +29,21 @@ export const LOOP_HOLDER = {
 } as const;
 
 export const LOOP = {
-  /** Body-center Y while the loop follows the cursor over the plate. */
-  Y_HOVER: 3.5,
+  /**
+   * Group-center Y while the loop follows the cursor. Tuned so the donut
+   * tube rests on the agar surface (the loop is dragged flat on the plate,
+   * the way a real inoculation loop contacts agar) — see RING offsets in
+   * Loop.tsx. = PLATE.surfaceY + RING_TUBE + (HANDLE_LENGTH/2 + 0.45).
+   */
+  Y_HOVER: PLATE.surfaceY + 0.07 + (4 / 2 + 0.45),
   FOLLOW_LERP: 0.1,
   HANDLE_LENGTH: 4,
-  RING_RADIUS: 0.25,
-  RING_TUBE: 0.04,
+  HANDLE_RADIUS_TOP: 0.04,
+  HANDLE_RADIUS_BOTTOM: 0.055,
+  RING_RADIUS: 0.32,
+  RING_TUBE: 0.07,
   /** Resting pose in the holder before pickup. */
-  REST_POSITION: [-5, 2.4, 1.5] as Vec3,
+  REST_POSITION: [-5, 2.5, 1.5] as Vec3,
   REST_TILT: 0.35,
 } as const;
 

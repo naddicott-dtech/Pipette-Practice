@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useStreakStore } from '../store';
 import { StreakStep } from '../sim/types';
 
@@ -9,6 +9,10 @@ import { StreakStep } from '../sim/types';
  * extend this controller. Non-rendering.
  */
 export function StreakInputController() {
+  // Guards key auto-repeat so a held Space fires commit once, not every
+  // repeat event (matters once Slice 2 makes Space a hold-to-lower action).
+  const spaceDown = useRef(false);
+
   useEffect(() => {
     function commit() {
       const state = useStreakStore.getState();
@@ -22,9 +26,17 @@ export function StreakInputController() {
 
     function onKeyDown(e: KeyboardEvent) {
       if (e.code === 'Space') {
+        if (spaceDown.current) return;
+        spaceDown.current = true;
         e.preventDefault();
         commit();
       }
+    }
+    function onKeyUp(e: KeyboardEvent) {
+      if (e.code === 'Space') spaceDown.current = false;
+    }
+    function onBlur() {
+      spaceDown.current = false;
     }
     function onMouseDown(e: MouseEvent) {
       const target = e.target as HTMLElement | null;
@@ -34,9 +46,13 @@ export function StreakInputController() {
     }
 
     window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
     window.addEventListener('mousedown', onMouseDown);
     return () => {
       window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
       window.removeEventListener('mousedown', onMouseDown);
     };
   }, []);
