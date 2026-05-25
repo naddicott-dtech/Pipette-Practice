@@ -67,7 +67,8 @@ describe('streak config invariants', () => {
   });
 
   it('rotates a quarter turn counter-clockwise', () => {
-    expect(PLATE_ROTATION.STEP).toBe(-Math.PI / 2);
+    // Positive rotation.y is CCW from the top-down streak camera.
+    expect(PLATE_ROTATION.STEP).toBe(Math.PI / 2);
     expect(PLATE_ROTATION.TRANSITION_MS).toBeGreaterThan(0);
   });
 });
