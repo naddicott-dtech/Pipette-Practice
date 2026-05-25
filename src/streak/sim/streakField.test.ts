@@ -47,7 +47,7 @@ describe('streak dilution field', () => {
     // Pick up at the pool, then deposit along a line of fresh cells.
     let carried = applyContact(f, -1.5, -1.5, 0).carried;
     const deposits: number[] = [];
-    for (let k = 0; k < 30; k++) {
+    for (let k = 0; k < 60; k++) {
       const x = -1 + k * 0.05; // marching away from the pool into empty agar
       const r = applyContact(f, x, 1.5, carried);
       carried = r.carried;

@@ -9,9 +9,9 @@ const MARK_Y = PLATE.surfaceY + 0.012;
 
 // Deposit value mapped to a fully "solid" mark; lighter deposits read as
 // faint dots (the diluted tail of a streak → foreshadows isolation).
-const DEPOSIT_NORM = 0.12;
-const MIN_RADIUS = 0.05;
-const MAX_RADIUS = 0.15;
+const DEPOSIT_NORM = 0.04;
+const MIN_RADIUS = 0.045;
+const MAX_RADIUS = 0.14;
 
 // Earthy amber, darkening with density — deliberately darker than the pale
 // agar (#e9dcab renders near-white under the spotlight) so the streak trail

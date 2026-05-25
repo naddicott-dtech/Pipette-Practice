@@ -71,8 +71,13 @@ export const STREAK_FIELD = {
   HALF: PLATE.radius,
   /** Fraction of a cell's density the loop scrapes up per contact. */
   ALPHA: 0.25,
-  /** Fraction of the loop's carried load deposited per contact. */
-  BETA: 0.18,
+  /**
+   * Fraction of the loop's carried load deposited per contact. Low, so the
+   * load bleeds off slowly and a streak tracks a long way — dense at the
+   * start, tapering to a thin but persistent tail — instead of dying out
+   * within a centimeter. The geometric decay is still what drives dilution.
+   */
+  BETA: 0.05,
   /** Max per-cell density (saturation). */
   DMAX: 1,
   /** Density painted into the pre-seeded pool. */
@@ -80,7 +85,7 @@ export const STREAK_FIELD = {
   /** World units of travel per contact step (distance-based integration). */
   STEP_DIST: 0.04,
   /** Deposits below this don't bother drawing a visible mark. */
-  MARK_MIN_DEPOSIT: 0.002,
+  MARK_MIN_DEPOSIT: 0.0006,
 } as const;
 
 /** Stroke-recording bounds (decimation + caps keep buffers bounded). */
@@ -90,9 +95,12 @@ export const PATH = {
   MAX_STROKES: 16,
 } as const;
 
-/** Plate rotation: one counter-clockwise quarter turn per press. */
+/**
+ * Plate rotation: one counter-clockwise quarter turn per press. Positive
+ * rotation.y reads as counter-clockwise from the top-down streak camera.
+ */
 export const PLATE_ROTATION = {
-  STEP: -Math.PI / 2,
+  STEP: Math.PI / 2,
   TRANSITION_MS: 350,
 } as const;
 
