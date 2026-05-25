@@ -36,15 +36,17 @@ export const LOOP = {
   RING_RADIUS: 0.32,
   RING_TUBE: 0.07,
   /**
-   * Forward tilt of the held loop (radians). The loop is dragged at an
-   * angle so its leading edge — not the whole flat ring — contacts the
-   * agar, the way a real inoculation loop streaks a sample. Loop.tsx
-   * derives the follow height/offset from this so that contact edge sits
-   * on the surface, directly under the cursor.
+   * Tilt of the loop's plane away from vertical (radians). The handle is
+   * coplanar with the ring (the shaft axis is a diameter of the donut, so
+   * extending it runs back through the donut), and the whole assembly is
+   * tilted so the ring's bottom edge — not the flat face — rests on the
+   * agar, the way a real loop is held to streak. ~0 = upright (reads as a
+   * line from above); ~π/2 = flat. Loop.tsx pins the bottom edge to the
+   * surface under the cursor.
    */
-  TILT_X: 0.42,
-  /** Resting pose in the holder before pickup. */
-  REST_POSITION: [-5, 0.7, 1.2] as Vec3,
+  TILT_X: 0.7,
+  /** Resting pose in the holder before pickup (the ring's contact point). */
+  REST_POSITION: [-5, 0.5, 1.1] as Vec3,
 } as const;
 
 export const CAMERA = {

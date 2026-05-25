@@ -9,19 +9,19 @@ const R = LOOP.RING_RADIUS;
 const T = LOOP.RING_TUBE;
 const H = LOOP.HANDLE_LENGTH;
 
-// Group Y so the leading (downhill) edge of the tilted donut just touches
-// the agar surface.
-const GROUND_Y = PLATE.surfaceY + R * Math.sin(TILT) + T * Math.cos(TILT);
-// Forward (+Z) distance from the group origin to that contact edge. We
-// offset the follow target by -FWD so the contact edge — the part that
-// drags the sample — sits directly under the cursor.
-const FWD = R * Math.cos(TILT) - T * Math.sin(TILT);
+// Lift the assembly so the bottom of the tilted ring's tube touches the
+// agar. The ring's bottom point sits at the tilt-group origin, which the
+// outer group pins to the cursor on the surface.
+const CONTACT_Y = PLATE.surfaceY + T * Math.cos(TILT);
 
 /**
- * The inoculation loop: a thin straight handle ending in a wire ring,
- * held at a fixed forward tilt so the ring's leading edge drags across
- * the agar (rigid — no flexing/gouging). Rests in the holder until
- * pickup, then the contact edge follows the cursor over the plate.
+ * The inoculation loop. The thin straight handle is COPLANAR with the
+ * wire ring — the shaft axis is a diameter of the donut, so extending it
+ * runs from the top of the handle, through where it meets the ring, and
+ * on through the donut again. The assembly is held at a fixed tilt so the
+ * ring's bottom edge drags on the agar (rigid — no flexing/gouging). The
+ * contact point follows the cursor; the loop rests in its holder until
+ * pickup.
  */
 export function Loop() {
   const group = useRef<THREE.Group>(null);
@@ -32,7 +32,7 @@ export function Loop() {
     if (!g) return;
     const { hasLoop, pointer } = useStreakStore.getState();
     if (hasLoop && pointer) {
-      target.current.set(pointer.x, GROUND_Y, pointer.z - FWD);
+      target.current.set(pointer.x, CONTACT_Y, pointer.z);
     } else {
       target.current.set(...LOOP.REST_POSITION);
     }
@@ -43,27 +43,26 @@ export function Loop() {
     <group
       ref={group}
       position={LOOP.REST_POSITION as unknown as [number, number, number]}
-      rotation={[TILT, 0, 0]}
     >
-      {/* Loop ring — its leading edge drags the sample across the agar. */}
-      <mesh rotation={[Math.PI / 2, 0, 0]} castShadow>
-        <torusGeometry args={[R, T, 20, 56]} />
-        <meshStandardMaterial color="#9ca3af" roughness={0.3} metalness={0.8} />
-      </mesh>
+      {/* Tilt the whole coplanar loop+handle about X; the ring's bottom
+          point stays at the origin (the agar contact under the cursor). */}
+      <group rotation={[TILT, 0, 0]}>
+        {/* Wire ring in the XY plane — its plane contains the handle axis.
+            Centered at (0, R) so its bottom point sits at the origin. */}
+        <mesh position={[0, R, 0]} castShadow>
+          <torusGeometry args={[R, T, 20, 56]} />
+          <meshStandardMaterial color="#9ca3af" roughness={0.3} metalness={0.8} />
+        </mesh>
 
-      {/* Wire neck rising from the back edge of the loop */}
-      <mesh position={[0, 0.18, -R]}>
-        <cylinderGeometry args={[0.025, 0.025, 0.36, 8]} />
-        <meshStandardMaterial color="#9ca3af" roughness={0.3} metalness={0.8} />
-      </mesh>
-
-      {/* Thin straight handle, attached at the back edge of the loop */}
-      <mesh position={[0, H / 2 + 0.3, -R]} castShadow>
-        <cylinderGeometry
-          args={[LOOP.HANDLE_RADIUS_TOP, LOOP.HANDLE_RADIUS_BOTTOM, H, 16]}
-        />
-        <meshStandardMaterial color="#fbbf24" roughness={0.4} metalness={0.1} />
-      </mesh>
+        {/* Thin straight handle continuing up the loop's axis from the top
+            of the ring. Same plane as the ring (a diameter extended). */}
+        <mesh position={[0, 2 * R + H / 2, 0]} castShadow>
+          <cylinderGeometry
+            args={[LOOP.HANDLE_RADIUS_TOP, LOOP.HANDLE_RADIUS_BOTTOM, H, 16]}
+          />
+          <meshStandardMaterial color="#fbbf24" roughness={0.4} metalness={0.1} />
+        </mesh>
+      </group>
     </group>
   );
 }
