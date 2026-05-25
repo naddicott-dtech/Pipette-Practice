@@ -18,9 +18,9 @@ function resolveCopy(step: StreakStep): PromptCopy {
       };
     case StreakStep.STREAK:
       return {
-        text: 'Loop ready',
-        detail: 'Streaking the plate comes next.',
-        tone: 'progress',
+        text: 'Hold to lower the loop and drag to streak',
+        detail: 'Rotate the plate 90° between quadrants to dilute toward single colonies.',
+        tone: 'instruct',
       };
     case StreakStep.INCUBATE:
       return { text: 'Ready to incubate', tone: 'progress' };

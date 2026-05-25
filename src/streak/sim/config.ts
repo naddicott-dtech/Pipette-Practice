@@ -18,8 +18,10 @@ export const PLATE = {
  * before streaking (pipetting itself is hand-waved this slice).
  */
 export const POOL = {
-  position: [1.6, PLATE.surfaceY, 1.6] as Vec3,
-  radius: 0.5,
+  // Top-left corner of the top-down view (−x, −z). The first quadrant is
+  // streaked out of this drop; rotating the plate moves it out of the way.
+  position: [-1.5, PLATE.surfaceY, -1.5] as Vec3,
+  radius: 0.4,
 } as const;
 
 /** Stand holding the sealed sterile loop, off to the side of the plate. */
@@ -47,6 +49,51 @@ export const LOOP = {
   TILT_X: 0.7,
   /** Resting pose in the holder before pickup (the ring's contact point). */
   REST_POSITION: [-5, 0.5, 1.1] as Vec3,
+  /**
+   * How far above the agar the loop floats while not streaking (phase
+   * 'free'). Holding to streak lowers it to the contact point; releasing
+   * lifts it back up by this much.
+   */
+  HOVER_LIFT: 0.28,
+} as const;
+
+/**
+ * Dilution-field model for streaking. The agar holds a density grid; the
+ * loop carries a scalar load. At each contact step the loop picks up
+ * `ALPHA·D` from the cell and deposits `BETA·C` of its load. Dragging from
+ * the dense pool into fresh agar bleeds the load down geometrically, so a
+ * streak fades along its length toward isolated colonies.
+ */
+export const STREAK_FIELD = {
+  /** Grid cells per axis across the plate's 2R bounding box. */
+  RESOLUTION: 96,
+  /** Half-width of the grid = plate radius. */
+  HALF: PLATE.radius,
+  /** Fraction of a cell's density the loop scrapes up per contact. */
+  ALPHA: 0.25,
+  /** Fraction of the loop's carried load deposited per contact. */
+  BETA: 0.18,
+  /** Max per-cell density (saturation). */
+  DMAX: 1,
+  /** Density painted into the pre-seeded pool. */
+  POOL_DENSITY: 1,
+  /** World units of travel per contact step (distance-based integration). */
+  STEP_DIST: 0.04,
+  /** Deposits below this don't bother drawing a visible mark. */
+  MARK_MIN_DEPOSIT: 0.002,
+} as const;
+
+/** Stroke-recording bounds (decimation + caps keep buffers bounded). */
+export const PATH = {
+  MIN_SPACING: 0.03,
+  MAX_POINTS_PER_STROKE: 400,
+  MAX_STROKES: 16,
+} as const;
+
+/** Plate rotation: one counter-clockwise quarter turn per press. */
+export const PLATE_ROTATION = {
+  STEP: -Math.PI / 2,
+  TRANSITION_MS: 350,
 } as const;
 
 export const CAMERA = {
