@@ -51,7 +51,7 @@ export function Loop() {
             Centered at (0, R) so its bottom point sits at the origin. */}
         <mesh position={[0, R, 0]} castShadow>
           <torusGeometry args={[R, T, 20, 56]} />
-          <meshStandardMaterial color="#9ca3af" roughness={0.3} metalness={0.8} />
+          <meshStandardMaterial color="#fbbf24" roughness={0.4} metalness={0.1} />
         </mesh>
 
         {/* Thin straight handle continuing up the loop's axis from the top
