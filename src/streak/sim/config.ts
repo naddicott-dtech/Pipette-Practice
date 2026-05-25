@@ -60,9 +60,9 @@ export const LOOP = {
 /**
  * Dilution-field model for streaking. The agar holds a density grid; the
  * loop carries a scalar load. At each contact step the loop picks up
- * `ALPHA·D` from the cell and deposits `BETA·C` of its load. Dragging from
- * the dense pool into fresh agar bleeds the load down geometrically, so a
- * streak fades along its length toward isolated colonies.
+ * `ALPHA·D^PICKUP_EXP` from the cell and deposits `BETA·C` of its load.
+ * Dragging from the dense pool into fresh agar bleeds the load down
+ * geometrically, so a streak fades along its length toward isolated colonies.
  */
 export const STREAK_FIELD = {
   /** Grid cells per axis across the plate's 2R bounding box. */

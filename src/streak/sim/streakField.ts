@@ -69,10 +69,11 @@ export function seedPool(
 
 /**
  * One contact step of the loop against the agar at agar-local (x, z) while
- * carrying load `carried`. The loop picks up `ALPHA·D` from the cell and
- * deposits `BETA·C` onto it; densities clamp to [0, DMAX] and the carried
- * load never goes negative. Mutates the cell; returns the new carried load
- * and the amount deposited (used for the visible mark's intensity).
+ * carrying load `carried`. The loop picks up `ALPHA·D^PICKUP_EXP` from the
+ * cell (sub-linear — see config) and deposits `BETA·C` onto it; densities
+ * clamp to [0, DMAX] and the carried load clamps to [0, CARRIED_MAX].
+ * Mutates the cell; returns the new carried load and the amount deposited
+ * (used for the visible mark's intensity).
  */
 export function applyContact(
   field: StreakField,
