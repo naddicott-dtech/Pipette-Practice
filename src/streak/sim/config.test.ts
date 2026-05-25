@@ -28,8 +28,9 @@ describe('streak config invariants', () => {
     expect(CAMERA.TRANSITION_MS).toBeGreaterThan(0);
   });
 
-  it('positions the loop ring below the handle', () => {
+  it('defines a thin tilted loop', () => {
     expect(LOOP.HANDLE_LENGTH).toBeGreaterThan(0);
-    expect(LOOP.Y_HOVER).toBeGreaterThan(0);
+    expect(LOOP.TILT_X).toBeGreaterThan(0);
+    expect(LOOP.RING_TUBE).toBeLessThan(LOOP.RING_RADIUS);
   });
 });
