@@ -84,11 +84,17 @@ export function applyContact(
   if (i === null) return { carried, deposited: 0 };
 
   const d = field.data[i];
-  const pickup = STREAK_FIELD.ALPHA * d;
+  // Sub-linear pickup boosts reloading from thin prior-quadrant streaks
+  // (see STREAK_FIELD.PICKUP_EXP); it can exceed the cell's density, which
+  // is the intended cheat. The cell still can't go below zero.
+  const pickup = d > 0 ? STREAK_FIELD.ALPHA * Math.pow(d, STREAK_FIELD.PICKUP_EXP) : 0;
   const deposit = STREAK_FIELD.BETA * carried;
 
   const newD = Math.min(STREAK_FIELD.DMAX, Math.max(0, d - pickup + deposit));
-  const newC = Math.max(0, carried - deposit + pickup);
+  const newC = Math.min(
+    STREAK_FIELD.CARRIED_MAX,
+    Math.max(0, carried - deposit + pickup),
+  );
 
   field.data[i] = newD;
   return { carried: newC, deposited: deposit };

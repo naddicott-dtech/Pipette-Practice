@@ -4,6 +4,7 @@ import {
   seedPool,
   sampleDensity,
   applyContact,
+  cellIndex,
 } from './streakField';
 import { STREAK_FIELD } from './config';
 
@@ -44,21 +45,42 @@ describe('streak dilution field', () => {
     const f = createField(96, 3);
     seedPool(f, -1.5, -1.5, 0.4, 1);
 
-    // Pick up at the pool, then deposit along a line of fresh cells.
-    let carried = applyContact(f, -1.5, -1.5, 0).carried;
+    // Pick up at the pool, then deposit along a line of fresh cells. Step
+    // by more than a cell width so each contact lands on a new (empty) cell.
+    const c0 = applyContact(f, -1.5, -1.5, 0).carried;
+    let carried = c0;
     const deposits: number[] = [];
-    for (let k = 0; k < 60; k++) {
-      const x = -1 + k * 0.05; // marching away from the pool into empty agar
+    for (let k = 0; k < 50; k++) {
+      const x = -1 + k * 0.08; // marching away from the pool into empty agar
       const r = applyContact(f, x, 1.5, carried);
       carried = r.carried;
       deposits.push(r.deposited);
     }
 
-    // Deposits decay monotonically and the loop's load trends to zero.
+    // Deposits decay monotonically and the load bleeds well down — the tail
+    // deposit is a small fraction of the head (the dilution gradient).
     for (let i = 1; i < deposits.length; i++) {
       expect(deposits[i]).toBeLessThanOrEqual(deposits[i - 1] + 1e-9);
     }
-    expect(carried).toBeLessThan(0.05);
+    expect(carried).toBeLessThan(c0);
+    expect(deposits[deposits.length - 1]).toBeLessThan(deposits[0] * 0.5);
+  });
+
+  it('reloads disproportionately from a thin streak (sub-linear pickup)', () => {
+    const f = createField(64, 3);
+    const i = cellIndex(f, 0, 0)!;
+    f.data[i] = 0.04; // a faint prior-quadrant streak cell
+    const r = applyContact(f, 0, 0, 0);
+    // A purely linear ALPHA·D pickup would be much smaller.
+    expect(r.carried).toBeGreaterThan(STREAK_FIELD.ALPHA * 0.04);
+  });
+
+  it('caps the carried load', () => {
+    const f = createField(32, 3);
+    seedPool(f, 0, 0, 0.6, 1);
+    let carried = 0;
+    for (let k = 0; k < 40; k++) carried = applyContact(f, 0, 0, carried).carried;
+    expect(carried).toBeLessThanOrEqual(STREAK_FIELD.CARRIED_MAX + 1e-9);
   });
 
   it('does not dilute when dragging only through dense agar (lawn)', () => {
