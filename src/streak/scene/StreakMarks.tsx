@@ -9,7 +9,7 @@ const MARK_Y = PLATE.surfaceY + 0.012;
 
 // Deposit value mapped to a fully "solid" mark; lighter deposits read as
 // faint dots (the diluted tail of a streak → foreshadows isolation).
-const DEPOSIT_NORM = 0.04;
+const DEPOSIT_NORM = 0.02;
 const MIN_RADIUS = 0.045;
 const MAX_RADIUS = 0.14;
 

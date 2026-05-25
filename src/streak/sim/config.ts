@@ -60,38 +60,49 @@ export const LOOP = {
 /**
  * Dilution-field model for streaking. The agar holds a density grid; the
  * loop carries a scalar load. At each contact step the loop picks up
- * `ALPHA·D` from the cell and deposits `BETA·C` of its load. Dragging from
- * the dense pool into fresh agar bleeds the load down geometrically, so a
- * streak fades along its length toward isolated colonies.
+ * `ALPHA·D^PICKUP_EXP` from the cell and deposits `BETA·C` of its load.
+ * Dragging from the dense pool into fresh agar bleeds the load down
+ * geometrically, so a streak fades along its length toward isolated colonies.
  */
 export const STREAK_FIELD = {
   /** Grid cells per axis across the plate's 2R bounding box. */
   RESOLUTION: 96,
   /** Half-width of the grid = plate radius. */
   HALF: PLATE.radius,
-  /** Fraction of a cell's density the loop scrapes up per contact. */
-  ALPHA: 0.25,
+  /** Scale on the per-contact pickup (see PICKUP_EXP). */
+  ALPHA: 0.35,
+  /**
+   * Pickup is `ALPHA · D^PICKUP_EXP`. The sub-linear exponent is a
+   * deliberate "cheat": dragging through a *thin* prior-quadrant streak
+   * reloads the loop disproportionately more than its faint density would
+   * physically give, so the serial dilution stays visible through the
+   * third/fourth rotation (matching how the technique actually looks) — at
+   * the dense pool (D≈1) it's unchanged.
+   */
+  PICKUP_EXP: 0.6,
   /**
    * Fraction of the loop's carried load deposited per contact. Low, so the
    * load bleeds off slowly and a streak tracks a long way — dense at the
    * start, tapering to a thin but persistent tail — instead of dying out
    * within a centimeter. The geometric decay is still what drives dilution.
    */
-  BETA: 0.05,
+  BETA: 0.025,
   /** Max per-cell density (saturation). */
   DMAX: 1,
+  /** Clamp on the loop's carried load (keeps the pickup cheat bounded). */
+  CARRIED_MAX: 1.5,
   /** Density painted into the pre-seeded pool. */
   POOL_DENSITY: 1,
   /** World units of travel per contact step (distance-based integration). */
   STEP_DIST: 0.04,
   /** Deposits below this don't bother drawing a visible mark. */
-  MARK_MIN_DEPOSIT: 0.0006,
+  MARK_MIN_DEPOSIT: 0.0004,
 } as const;
 
 /** Stroke-recording bounds (decimation + caps keep buffers bounded). */
 export const PATH = {
   MIN_SPACING: 0.03,
-  MAX_POINTS_PER_STROKE: 400,
+  MAX_POINTS_PER_STROKE: 700,
   MAX_STROKES: 16,
 } as const;
 

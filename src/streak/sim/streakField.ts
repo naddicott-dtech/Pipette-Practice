@@ -69,10 +69,11 @@ export function seedPool(
 
 /**
  * One contact step of the loop against the agar at agar-local (x, z) while
- * carrying load `carried`. The loop picks up `ALPHA·D` from the cell and
- * deposits `BETA·C` onto it; densities clamp to [0, DMAX] and the carried
- * load never goes negative. Mutates the cell; returns the new carried load
- * and the amount deposited (used for the visible mark's intensity).
+ * carrying load `carried`. The loop picks up `ALPHA·D^PICKUP_EXP` from the
+ * cell (sub-linear — see config) and deposits `BETA·C` onto it; densities
+ * clamp to [0, DMAX] and the carried load clamps to [0, CARRIED_MAX].
+ * Mutates the cell; returns the new carried load and the amount deposited
+ * (used for the visible mark's intensity).
  */
 export function applyContact(
   field: StreakField,
@@ -84,11 +85,17 @@ export function applyContact(
   if (i === null) return { carried, deposited: 0 };
 
   const d = field.data[i];
-  const pickup = STREAK_FIELD.ALPHA * d;
+  // Sub-linear pickup boosts reloading from thin prior-quadrant streaks
+  // (see STREAK_FIELD.PICKUP_EXP); it can exceed the cell's density, which
+  // is the intended cheat. The cell still can't go below zero.
+  const pickup = d > 0 ? STREAK_FIELD.ALPHA * Math.pow(d, STREAK_FIELD.PICKUP_EXP) : 0;
   const deposit = STREAK_FIELD.BETA * carried;
 
   const newD = Math.min(STREAK_FIELD.DMAX, Math.max(0, d - pickup + deposit));
-  const newC = Math.max(0, carried - deposit + pickup);
+  const newC = Math.min(
+    STREAK_FIELD.CARRIED_MAX,
+    Math.max(0, carried - deposit + pickup),
+  );
 
   field.data[i] = newD;
   return { carried: newC, deposited: deposit };

@@ -56,6 +56,9 @@ describe('streak config invariants', () => {
     expect(STREAK_FIELD.ALPHA).toBeLessThan(1);
     expect(STREAK_FIELD.BETA).toBeGreaterThan(0);
     expect(STREAK_FIELD.BETA).toBeLessThan(1);
+    expect(STREAK_FIELD.PICKUP_EXP).toBeGreaterThan(0);
+    expect(STREAK_FIELD.PICKUP_EXP).toBeLessThan(1);
+    expect(STREAK_FIELD.CARRIED_MAX).toBeGreaterThan(0);
     expect(STREAK_FIELD.DMAX).toBeGreaterThan(0);
     expect(STREAK_FIELD.STEP_DIST).toBeGreaterThan(0);
   });
