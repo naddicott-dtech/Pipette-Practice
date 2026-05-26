@@ -23,9 +23,13 @@ function resolveCopy(step: StreakStep): PromptCopy {
         tone: 'instruct',
       };
     case StreakStep.INCUBATE:
-      return { text: 'Ready to incubate', tone: 'progress' };
+      return {
+        text: 'Incubating — colonies are growing…',
+        detail: '24 h at 37 °C, sped up.',
+        tone: 'progress',
+      };
     case StreakStep.COMPLETE:
-      return { text: 'Done', tone: 'progress' };
+      return { text: 'Incubation complete', tone: 'progress' };
   }
 }
 

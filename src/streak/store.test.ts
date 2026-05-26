@@ -101,6 +101,45 @@ describe('Streak store', () => {
     );
   });
 
+  it('starts with no colonies and no incubation timer', () => {
+    const s = useStreakStore.getState();
+    expect(s.colonies).toEqual([]);
+    expect(s.incubationStartedAt).toBeNull();
+  });
+
+  it('startIncubation grows colonies and advances to INCUBATE only from STREAK', () => {
+    const s = useStreakStore.getState();
+    s.startIncubation(); // wrong step (GET_LOOP) — no-op
+    expect(useStreakStore.getState().step).toBe(StreakStep.GET_LOOP);
+
+    s.pickUpLoop(); // now STREAK; pool is seeded, so colonies should grow
+    useStreakStore.getState().startIncubation();
+    const after = useStreakStore.getState();
+    expect(after.step).toBe(StreakStep.INCUBATE);
+    expect(after.colonies.length).toBeGreaterThan(0);
+    expect(after.incubationStartedAt).not.toBeNull();
+  });
+
+  it('startIncubation is blocked mid-stroke', () => {
+    const s = useStreakStore.getState();
+    s.pickUpLoop();
+    s.setHoverTarget({ kind: 'plate' });
+    s.lowerLoop();
+    useStreakStore.getState().startIncubation();
+    expect(useStreakStore.getState().step).toBe(StreakStep.STREAK);
+  });
+
+  it('finishIncubation advances INCUBATE → COMPLETE (and is a no-op otherwise)', () => {
+    const s = useStreakStore.getState();
+    s.finishIncubation(); // not incubating — no-op
+    expect(useStreakStore.getState().step).toBe(StreakStep.GET_LOOP);
+
+    s.pickUpLoop();
+    useStreakStore.getState().startIncubation();
+    useStreakStore.getState().finishIncubation();
+    expect(useStreakStore.getState().step).toBe(StreakStep.COMPLETE);
+  });
+
   it('reset restores the initial state', () => {
     const s = useStreakStore.getState();
     s.pickUpLoop();
@@ -110,7 +149,9 @@ describe('Streak store', () => {
     s.appendContact(0.1, 0.1, 0.05);
     s.setCarriedLoad(0.7);
     s.rotatePlateCCW();
-    s.reset();
+    useStreakStore.getState().finishRotation();
+    useStreakStore.getState().startIncubation();
+    useStreakStore.getState().reset();
     const after = useStreakStore.getState();
     expect(after.step).toBe(StreakStep.GET_LOOP);
     expect(after.hasLoop).toBe(false);
@@ -120,5 +161,7 @@ describe('Streak store', () => {
     expect(after.rotating).toBe(false);
     expect(after.carriedLoad).toBe(0);
     expect(after.strokes).toEqual([]);
+    expect(after.colonies).toEqual([]);
+    expect(after.incubationStartedAt).toBeNull();
   });
 });

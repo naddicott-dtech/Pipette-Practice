@@ -2,6 +2,8 @@ import { Canvas } from '@react-three/fiber';
 import { StreakSceneRoot } from './scene/StreakSceneRoot';
 import { StreakPrompt } from './ui/StreakPrompt';
 import { RotateControl } from './ui/RotateControl';
+import { IncubateControl } from './ui/IncubateControl';
+import { StreakDebrief } from './ui/StreakDebrief';
 
 export default function StreakApp() {
   return (
@@ -12,6 +14,8 @@ export default function StreakApp() {
 
       <StreakPrompt />
       <RotateControl />
+      <IncubateControl />
+      <StreakDebrief />
 
       {/* Small-screen warning. Touch isn't supported (yet). */}
       <div className="fixed bottom-4 left-4 right-4 md:hidden bg-red-900/80 p-4 rounded-lg text-center z-50">

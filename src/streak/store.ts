@@ -12,6 +12,7 @@ import {
   seedPool,
   type StreakField,
 } from './sim/streakField';
+import { generateColonies, type Colony } from './sim/growth';
 import {
   createStroke,
   pushPoint,
@@ -50,6 +51,12 @@ interface StreakState {
   /** Recorded strokes (agar-local), drawn as the visible marks. */
   strokes: Stroke[];
 
+  // ─── Incubation + colonies ────────────────────────────────────────────
+  /** Colonies grown from the field; frozen at incubation start ([] before). */
+  colonies: Colony[];
+  /** Wall-clock ms when incubation began; null when not incubating. */
+  incubationStartedAt: number | null;
+
   // ─── Actions ──────────────────────────────────────────────────────────
   setStep: (step: StreakStep) => void;
   setInteractionPhase: (phase: InteractionPhase) => void;
@@ -70,6 +77,10 @@ interface StreakState {
   setCarriedLoad: (v: number) => void;
   /** Lift the loop and finalize the active stroke. */
   raiseLoop: () => void;
+  /** Grow colonies from the field and begin the incubation time-lapse. */
+  startIncubation: () => void;
+  /** Called by the incubation driver once the time-lapse finishes. */
+  finishIncubation: () => void;
   reset: () => void;
 }
 
@@ -86,6 +97,8 @@ type SeededState = Pick<
   | 'field'
   | 'carriedLoad'
   | 'strokes'
+  | 'colonies'
+  | 'incubationStartedAt'
 >;
 
 // Rebuilds fresh objects (a re-seeded field, empty stroke list) so reset()
@@ -105,6 +118,8 @@ function makeInitial(): SeededState {
     field,
     carriedLoad: 0,
     strokes: [],
+    colonies: [],
+    incubationStartedAt: null,
   };
 }
 
@@ -168,6 +183,23 @@ export const useStreakStore = create<StreakState>((set, get) => ({
   raiseLoop: () => {
     if (get().interactionPhase !== 'acting') return;
     set({ interactionPhase: 'free' });
+  },
+
+  startIncubation: () => {
+    const s = get();
+    if (s.step !== StreakStep.STREAK || s.interactionPhase === 'acting') return;
+    set({
+      step: StreakStep.INCUBATE,
+      interactionPhase: 'free',
+      colonies: generateColonies(s.field),
+      incubationStartedAt:
+        typeof performance !== 'undefined' ? performance.now() : Date.now(),
+    });
+  },
+
+  finishIncubation: () => {
+    if (get().step !== StreakStep.INCUBATE) return;
+    set({ step: StreakStep.COMPLETE });
   },
 
   reset: () => set({ ...makeInitial() }),

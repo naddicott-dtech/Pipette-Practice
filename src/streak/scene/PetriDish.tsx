@@ -5,6 +5,7 @@ import { useStreakStore } from '../store';
 import { StreakStep } from '../sim/types';
 import { PLATE, POOL, PLATE_ROTATION } from '../sim/config';
 import { StreakMarks } from './StreakMarks';
+import { Colonies } from './Colonies';
 
 const GUIDE_Y = PLATE.surfaceY + 0.011;
 const GUIDE_LEN = PLATE.radius * 2 * 0.92;
@@ -76,6 +77,7 @@ export function PetriDish() {
         </mesh>
 
         <StreakMarks />
+        <Colonies />
       </group>
 
       {/* Hover ring when aiming at the plate with the loop */}

@@ -3,6 +3,7 @@ import { Table } from '../../scene/Table';
 import { StreakInteractionDriver } from './StreakInteractionDriver';
 import { StreakContactDriver } from './StreakContactDriver';
 import { StreakInputController } from './StreakInputController';
+import { IncubationDriver } from './IncubationDriver';
 import { StreakCameraRig } from './StreakCameraRig';
 import { PetriDish } from './PetriDish';
 import { LoopHolder } from './LoopHolder';
@@ -24,6 +25,7 @@ export function StreakSceneRoot() {
       <StreakInteractionDriver pointerRef={pointerRef} />
       <StreakContactDriver pointerRef={pointerRef} />
       <StreakInputController />
+      <IncubationDriver />
       <StreakCameraRig />
 
       <ambientLight intensity={0.5} />

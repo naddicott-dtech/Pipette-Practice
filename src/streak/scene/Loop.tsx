@@ -2,6 +2,7 @@ import { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useStreakStore } from '../store';
+import { StreakStep } from '../sim/types';
 import { LOOP, PLATE } from '../sim/config';
 
 const TILT = LOOP.TILT_X;
@@ -32,8 +33,11 @@ export function Loop() {
   useFrame(() => {
     const g = group.current;
     if (!g) return;
-    const { hasLoop, pointer, interactionPhase } = useStreakStore.getState();
-    if (hasLoop && pointer) {
+    const { hasLoop, pointer, interactionPhase, step } = useStreakStore.getState();
+    // Once incubating, the loop's job is done — park it back in the holder
+    // so it's out of the way of the growing plate.
+    const streaking = step === StreakStep.STREAK;
+    if (hasLoop && pointer && streaking) {
       // Lowered to the agar while streaking; floating just above otherwise.
       const y = interactionPhase === 'acting' ? CONTACT_Y : HOVER_Y;
       target.current.set(pointer.x, y, pointer.z);
