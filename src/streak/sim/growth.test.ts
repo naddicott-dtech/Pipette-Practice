@@ -58,9 +58,11 @@ describe('generateColonies', () => {
     // the diluted-tail band that used to grow nothing. It must now grow some.
     const faint = generateColonies(uniformField(0.003));
     expect(faint.length).toBeGreaterThan(0);
-    // ...but far fewer than a dense field (a scatter, not a lawn).
-    const dense = generateColonies(uniformField(0.6));
-    expect(faint.length).toBeLessThan(dense.length);
+    // ...but far fewer than a denser mid-band streak — still within the streak
+    // range and below the curve's ~0.04 saturation, so this probes the gradient
+    // (vs. comparing against a clamped lawn, which any density >0.04 would give).
+    const denser = generateColonies(uniformField(0.02));
+    expect(faint.length).toBeLessThan(denser.length);
   });
 
   it('respects the MAX_COLONIES cap', () => {
@@ -69,12 +71,12 @@ describe('generateColonies', () => {
   });
 
   it('clamps per-cell seeding to MAX_PER_CELL', () => {
-    // A small saturated field so the MAX_COLONIES cap can't mask the per-cell
-    // clamp: every cell is at DMAX, where lambda would otherwise exceed the cap.
+    // At DMAX the steep curve's raw lambda is ~2000 — far above the cap — so a
+    // saturated field (small enough that the MAX_COLONIES cap can't mask it)
+    // must land EXACTLY MAX_PER_CELL colonies in every cell, no more.
     const res = 8;
     const colonies = generateColonies(uniformField(STREAK_FIELD.DMAX, res));
-    expect(colonies.length).toBeLessThanOrEqual(res * res * GROWTH.MAX_PER_CELL);
-    expect(colonies.length).toBeGreaterThan(res * res); // more than one per cell
+    expect(colonies.length).toBe(res * res * GROWTH.MAX_PER_CELL);
   });
 });
 
@@ -166,7 +168,9 @@ describe('gradeStreak — technique caps the outcome grade', () => {
     return out;
   };
   // Realistic plate: a confluent inoculum pool (so the outcome can be "great")
-  // plus a wide *dilute* streak band (below HEAVY_D, so no smear flaw).
+  // plus a wide dilute streak band. The single test stroke never re-crosses the
+  // band, so overlapRatio stays 0 and no smear flaw fires (oversmear is a
+  // path-revisit metric, independent of this band's density).
   const realisticField = (): StreakField => {
     const f = createField();
     seedPool(f, PX, PZ, POOL.radius, STREAK_FIELD.POOL_DENSITY);
