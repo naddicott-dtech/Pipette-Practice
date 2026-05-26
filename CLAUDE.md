@@ -27,28 +27,48 @@ Guidance for AI agents (and humans) working on this repo.
 
 ## Project shape (current)
 
-- Vite + React 19 + react-three-fiber simulation of micropipetting DNA into an electrophoresis gel.
-- Zustand store drives a small workflow state machine: `GET_TIP → INTAKE_SAMPLE → LOAD_WELL → RUN_GEL → COMPLETE`.
-- Source layout:
-  - `src/store.ts` — workflow state, plunger, liquid, well contents, proximity flags.
-  - `src/components/Pipette.tsx` — pipette mesh + cursor tracking + interaction detection.
-  - `src/components/LabObjects.tsx` — table, tip rack, sample tube.
-  - `src/components/GelBox.tsx` — wells and band animation.
-  - `src/components/UIOverlay.tsx` — instructions, plunger slider, failure modal, run button.
-  - `src/store.test.ts` — Vitest unit tests for store transitions.
+Vite + React 19 + react-three-fiber. The app is a **multi-sim launcher**
+(`src/AppRouter.tsx` + `src/ChooseSim.tsx`, hash-routed) hosting two
+independent high-school lab simulations:
+
+### 1. Electrophoresis / micropipetting sim (the original)
+
+- Zustand store drives `GET_TIP → INTAKE_SAMPLE → LOAD_WELL → RUN_GEL →
+  COMPLETE` via a "lock-and-act" input model.
+- Layout: `src/store.ts`, `src/sim/` (pure rules/geometry), `src/scene/`
+  (r3f drivers + camera), `src/components/`, `src/ui/`, `src/store.test.ts`.
+- Design rationale + roadmap: [`docs/fix-plan.md`](docs/fix-plan.md) — the
+  authoritative source for this sim (the older file enumerations elsewhere may
+  lag the lock-and-act redesign).
+
+### 2. Streak-plating sim (`src/streak/`, route `#/streak`)
+
+- Quadrant streak-plating onto agar → incubation → colony growth → a debrief
+  that grades both the colony **outcome** and the streaking **technique**.
+  Workflow: `GET_LOOP → STREAK → INCUBATE → COMPLETE`.
+- **Read [`docs/streak-handoff.md`](docs/streak-handoff.md) first** — it has the
+  architecture, the two core models (dilution field + colony growth), the
+  technique-grading rubric, the config knobs, dev hooks, and tuning notes.
+- Layout: `src/streak/sim/` (pure models + config + tests),
+  `src/streak/scene/` (r3f drivers + meshes), `src/streak/ui/StreakDebrief.tsx`,
+  `src/streak/store.ts`.
 
 ## Commands
 
 - `npm run dev` — Vite dev server on :3000
 - `npm run lint` — `tsc --noEmit`
 - `npm test` — Vitest run
+- `npm run build` — production build (each sim is route-code-split)
 
-## Refactor plan
+## Roadmaps
 
-The active multi-chunk refactor and design rationale live in
-[`docs/fix-plan.md`](docs/fix-plan.md). Read it before making
-non-trivial changes; update it when you finish a chunk or change
-direction.
+- Gel sim: [`docs/fix-plan.md`](docs/fix-plan.md) (multi-chunk refactor +
+  decision log).
+- Streak sim: [`docs/streak-handoff.md`](docs/streak-handoff.md) (architecture +
+  what's done + deferred ideas + tuning notes).
+
+Read the relevant one before non-trivial changes; update it when you finish a
+slice/chunk or change direction.
 
 ## Working agreements for agents
 
@@ -56,4 +76,8 @@ direction.
 - Keep interaction detection (world-space) and rendering (scene graph) decoupled from input capture (mouse/keys) and workflow state (zustand).
 - New 3D interaction logic should use raycasting against an explicit ground/well plane, not screen-space heuristics.
 - Don't introduce per-band `setInterval`s or other ad-hoc timers when `useFrame` will do.
-- Add a unit test in `src/store.test.ts` for any new state transition.
+- Add a unit test for any new state transition or pure-model change, in the
+  matching `*.test.ts` (gel: `src/store.test.ts` / `src/sim/*.test.ts`; streak:
+  `src/streak/store.test.ts` / `src/streak/sim/*.test.ts`).
+- Keep simulation *models* pure and framework-free (the `sim/` folders).
+  r3f components/drivers translate input → store → scene; they don't hold rules.
