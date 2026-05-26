@@ -12,8 +12,11 @@ export function IncubateControl() {
   const step = useStreakStore((s) => s.step);
   const rotating = useStreakStore((s) => s.rotating);
   const phase = useStreakStore((s) => s.interactionPhase);
+  const hasStreaked = useStreakStore((s) => s.strokes.length > 0);
 
-  if (step !== StreakStep.STREAK) return null;
+  // No point incubating a blank plate — only offer it once something's been
+  // streaked (the seeded pool alone would just grow a lawn and teach nothing).
+  if (step !== StreakStep.STREAK || !hasStreaked) return null;
 
   const disabled = rotating || phase === 'acting';
 

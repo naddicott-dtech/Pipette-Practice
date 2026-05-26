@@ -53,6 +53,15 @@ describe('generateColonies', () => {
     const colonies = generateColonies(uniformField(STREAK_FIELD.DMAX, 96));
     expect(colonies.length).toBeLessThanOrEqual(GROWTH.MAX_COLONIES);
   });
+
+  it('clamps per-cell seeding to MAX_PER_CELL', () => {
+    // A small saturated field so the MAX_COLONIES cap can't mask the per-cell
+    // clamp: every cell is at DMAX, where lambda would otherwise exceed the cap.
+    const res = 8;
+    const colonies = generateColonies(uniformField(STREAK_FIELD.DMAX, res));
+    expect(colonies.length).toBeLessThanOrEqual(res * res * GROWTH.MAX_PER_CELL);
+    expect(colonies.length).toBeGreaterThan(res * res); // more than one per cell
+  });
 });
 
 describe('growthRadius', () => {

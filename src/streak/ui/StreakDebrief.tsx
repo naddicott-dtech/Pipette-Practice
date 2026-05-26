@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, type ReactNode } from 'react';
+import { useState, useEffect, useRef, useMemo, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Sparkles, CheckCircle2, CircleDashed, RotateCcw, X } from 'lucide-react';
 import { useStreakStore } from '../store';
@@ -49,8 +49,14 @@ export function StreakDebrief() {
 
   const visible = step === StreakStep.COMPLETE && !dismissed;
 
-  // Snapshot once on render — colonies are frozen at incubation start.
-  const verdict = classifyStreak(useStreakStore.getState().colonies);
+  // Grade only while the debrief is open. Colonies are frozen at incubation
+  // start, and `step === COMPLETE` is set in the same tick they're frozen, so
+  // a fresh snapshot here is current; recomputing keyed on `step` keeps the
+  // O(n²) isolation pass out of unrelated renders.
+  const verdict = useMemo(
+    () => classifyStreak(step === StreakStep.COMPLETE ? useStreakStore.getState().colonies : []),
+    [step],
+  );
   const copy = GRADE_COPY[verdict.grade];
 
   return (
