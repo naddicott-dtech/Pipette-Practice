@@ -49,6 +49,16 @@ describe('generateColonies', () => {
     expect(high).toBeGreaterThan(low);
   });
 
+  it('still grows a sparse scatter on a faint streak (luck floor / coverage)', () => {
+    // Density well below the OLD cliff (0.008) but above MIN_VIABLE — this is
+    // the diluted-tail band that used to grow nothing. It must now grow some.
+    const faint = generateColonies(uniformField(0.003));
+    expect(faint.length).toBeGreaterThan(0);
+    // ...but far fewer than a dense field (a scatter, not a lawn).
+    const dense = generateColonies(uniformField(0.6));
+    expect(faint.length).toBeLessThan(dense.length);
+  });
+
   it('respects the MAX_COLONIES cap', () => {
     const colonies = generateColonies(uniformField(STREAK_FIELD.DMAX, 96));
     expect(colonies.length).toBeLessThanOrEqual(GROWTH.MAX_COLONIES);
@@ -83,30 +93,48 @@ describe('growthRadius', () => {
 });
 
 describe('classifyStreak', () => {
-  it('grades widely-spaced colonies as great', () => {
-    const colonies: Colony[] = [];
+  const confluentField = () => uniformField(GROWTH.CONFLUENT_D); // every cell ≥ CONFLUENT_D
+  const emptyField = () => createField();
+  const spaced = (n: number): Colony[] => {
     const gap = GROWTH.ISOLATION_DIST * 3;
-    for (let i = 0; i < GROWTH.GREAT_MIN + 2; i++) {
-      colonies.push({ x: i * gap, z: 0, r: GROWTH.COLONY_RADIUS });
-    }
-    const v = classifyStreak(colonies);
+    const out: Colony[] = [];
+    for (let i = 0; i < n; i++) out.push({ x: i * gap, z: 0, r: GROWTH.COLONY_RADIUS });
+    return out;
+  };
+
+  it('grades a confluent zone + plenty of isolated colonies as great', () => {
+    const colonies = spaced(GROWTH.GREAT_ISO + 2);
+    const v = classifyStreak(colonies, confluentField());
     expect(v.isolatedCount).toBe(colonies.length);
+    expect(v.hasConfluent).toBe(true);
     expect(v.grade).toBe('great');
   });
 
-  it('grades a packed confluent cluster as ok (no isolated colonies)', () => {
+  it('grades isolated colonies WITHOUT a confluent zone as good, not great', () => {
+    // Full gradient requires a heavy zone too; plenty of singles alone is "good".
+    const v = classifyStreak(spaced(GROWTH.GREAT_ISO + 2), emptyField());
+    expect(v.hasConfluent).toBe(false);
+    expect(v.grade).toBe('good');
+  });
+
+  it('grades a few isolated colonies as good', () => {
+    const v = classifyStreak(spaced(GROWTH.GOOD_ISO), confluentField());
+    expect(v.grade).toBe('good');
+  });
+
+  it('grades a pure confluent lawn (no isolated colonies) as ok', () => {
     const colonies: Colony[] = [];
     const tiny = GROWTH.ISOLATION_DIST / 4;
     for (let i = 0; i < 50; i++) {
       colonies.push({ x: (i % 7) * tiny, z: Math.floor(i / 7) * tiny, r: GROWTH.COLONY_RADIUS });
     }
-    const v = classifyStreak(colonies);
+    const v = classifyStreak(colonies, confluentField());
     expect(v.isolatedCount).toBe(0);
     expect(v.grade).toBe('ok');
   });
 
   it('grades near-empty growth as ok', () => {
-    expect(classifyStreak([]).grade).toBe('ok');
-    expect(classifyStreak([{ x: 0, z: 0, r: GROWTH.COLONY_RADIUS }]).grade).toBe('ok');
+    expect(classifyStreak([], emptyField()).grade).toBe('ok');
+    expect(classifyStreak([{ x: 0, z: 0, r: GROWTH.COLONY_RADIUS }], emptyField()).grade).toBe('ok');
   });
 });

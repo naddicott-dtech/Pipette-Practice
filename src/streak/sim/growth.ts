@@ -20,6 +20,8 @@ export interface StreakVerdict {
   /** Colonies with no neighbor within GROWTH.ISOLATION_DIST. */
   isolatedCount: number;
   total: number;
+  /** A heavy/confluent growth zone is present (one end of the gradient). */
+  hasConfluent: boolean;
 }
 
 /**
@@ -41,10 +43,13 @@ function mulberry32(seed: number): () => number {
 /**
  * Generate discrete colonies from the density field. Each cell with density
  * ≥ MIN_VIABLE seeds `floor(λ)` colonies plus one more with probability
- * `frac(λ)`, where `λ = density · SEED_RATE`. Colony centers are jittered
- * within their cell and given a near-constant radius (size is biology, not
- * density), so dilute cells scatter a few separated singles while dense
- * cells pack many overlapping colonies into a lawn. Capped at MAX_COLONIES.
+ * `frac(λ)`, where `λ = SEED_BASELINE + SEED_RATE·density^SEED_EXP` (clamped
+ * to MAX_PER_CELL). Colony centers are jittered within their cell and given a
+ * near-constant radius (size is biology, not density), so dilute cells scatter
+ * a few separated singles while dense cells pack many overlapping colonies
+ * into a lawn. The baseline makes growth track *any* streak (a lucky lone
+ * ancestor can drop anywhere). If the total exceeds MAX_COLONIES it's thinned
+ * by an even stride so spatial coverage stays uniform.
  */
 export function generateColonies(field: StreakField): Colony[] {
   const { res, half, data } = field;
@@ -59,14 +64,15 @@ export function generateColonies(field: StreakField): Colony[] {
       if (d < GROWTH.MIN_VIABLE) continue;
 
       const rng = mulberry32(i + 1);
-      const lambda = GROWTH.SEED_RATE * Math.pow(d, GROWTH.SEED_EXP);
+      const lambda = Math.min(
+        GROWTH.MAX_PER_CELL,
+        GROWTH.SEED_BASELINE + GROWTH.SEED_RATE * Math.pow(d, GROWTH.SEED_EXP),
+      );
       let count = Math.floor(lambda);
       if (rng() < lambda - count) count += 1;
-      if (count > GROWTH.MAX_PER_CELL) count = GROWTH.MAX_PER_CELL;
 
       const cx = -half + (col + 0.5) * cell;
       for (let k = 0; k < count; k++) {
-        if (colonies.length >= GROWTH.MAX_COLONIES) return colonies;
         const jx = (rng() - 0.5) * cell;
         const jz = (rng() - 0.5) * cell;
         const r = GROWTH.COLONY_RADIUS * (1 + (rng() - 0.5) * GROWTH.RADIUS_JITTER);
@@ -74,7 +80,15 @@ export function generateColonies(field: StreakField): Colony[] {
       }
     }
   }
-  return colonies;
+
+  if (colonies.length <= GROWTH.MAX_COLONIES) return colonies;
+  // Even thinning (vs. truncating mid-grid, which would starve the far side).
+  const stride = colonies.length / GROWTH.MAX_COLONIES;
+  const thinned: Colony[] = [];
+  for (let k = 0; k < GROWTH.MAX_COLONIES; k++) {
+    thinned.push(colonies[Math.floor(k * stride)]);
+  }
+  return thinned;
 }
 
 /** Smoothstep-eased radius at incubation progress `t` (clamped to [0,1]). */
@@ -84,12 +98,14 @@ export function growthRadius(finalR: number, t: number): number {
 }
 
 /**
- * Ballpark grade for a streak: how many well-separated isolated colonies
- * grew. Isolation is the whole lesson — separated single colonies are what
- * let you pick a pure CRISPR-edited clone. A confluent lawn (everything
- * touching) or barely-any growth both grade as "ok".
+ * Ballpark grade for a streak, rewarding the full dilution gradient. The
+ * point of the technique is to span density zones — a heavy/confluent region
+ * grading down to clearly separated single colonies you can pick a pure
+ * clone from. So "great" needs BOTH a confluent zone and a healthy number of
+ * isolated colonies; "good" has pickable singles but an incomplete gradient;
+ * a pure lawn or barely-any growth is "ok".
  */
-export function classifyStreak(colonies: Colony[]): StreakVerdict {
+export function classifyStreak(colonies: Colony[], field: StreakField): StreakVerdict {
   const n = colonies.length;
   const d2 = GROWTH.ISOLATION_DIST * GROWTH.ISOLATION_DIST;
   let isolatedCount = 0;
@@ -110,12 +126,18 @@ export function classifyStreak(colonies: Colony[]): StreakVerdict {
     if (isolated) isolatedCount++;
   }
 
+  let confluentCells = 0;
+  for (let i = 0; i < field.data.length; i++) {
+    if (field.data[i] >= GROWTH.CONFLUENT_D) confluentCells++;
+  }
+  const hasConfluent = confluentCells >= GROWTH.CONFLUENT_MIN_CELLS;
+
   const grade: StreakGrade =
-    isolatedCount >= GROWTH.GREAT_MIN
+    hasConfluent && isolatedCount >= GROWTH.GREAT_ISO
       ? 'great'
-      : isolatedCount >= GROWTH.GOOD_MIN
+      : isolatedCount >= GROWTH.GOOD_ISO
         ? 'good'
         : 'ok';
 
-  return { grade, isolatedCount, total: n };
+  return { grade, isolatedCount, total: n, hasConfluent };
 }
