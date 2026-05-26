@@ -191,6 +191,16 @@ export const TECHNIQUE = {
   COVERAGE_BINS: 8,
   /** Underuse flaw when occupied in-disc bins fall below this fraction. */
   WHOLE_PLATE_MIN: 0.25,
+  /**
+   * "Crossing the streams": a new stroke should start on the previous streak
+   * (or the inoculum) so it carries a diluted sample over. A stroke whose start
+   * is farther than LINK_RADIUS from both the pool and every earlier streak
+   * began in fresh agar — a disconnected quadrant. The principle is "dip into
+   * the previous streak a few times before dragging the next quadrant out".
+   */
+  LINK_RADIUS: 0.35,
+  /** Unlinked flaw at/above this many strokes that start in fresh agar. */
+  MAX_UNLINKED: 2,
 } as const;
 
 /** Stroke-recording bounds (decimation + caps keep buffers bounded). */

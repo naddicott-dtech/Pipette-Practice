@@ -112,5 +112,7 @@ describe('streak config invariants', () => {
     expect(TECHNIQUE.COVERAGE_BINS).toBeGreaterThanOrEqual(2);
     expect(TECHNIQUE.WHOLE_PLATE_MIN).toBeGreaterThan(0);
     expect(TECHNIQUE.WHOLE_PLATE_MIN).toBeLessThanOrEqual(1);
+    expect(TECHNIQUE.LINK_RADIUS).toBeGreaterThan(0);
+    expect(TECHNIQUE.MAX_UNLINKED).toBeGreaterThanOrEqual(1);
   });
 });

@@ -2,7 +2,12 @@ import { GROWTH, PLATE, PLATE_ROTATION, POOL, TECHNIQUE } from './config';
 import { cellIndex, type StreakField } from './streakField';
 import type { Stroke } from './path';
 
-export type TechniqueFlawId = 'redipping' | 'noQuadrants' | 'oversmear' | 'underuse';
+export type TechniqueFlawId =
+  | 'redipping'
+  | 'noQuadrants'
+  | 'oversmear'
+  | 'underuse'
+  | 'unlinked';
 
 export interface TechniqueFlaw {
   id: TechniqueFlawId;
@@ -20,6 +25,8 @@ export interface TechniqueReport {
   plateCoverage: number;
   /** Streaked cells (D ≥ MIN_VIABLE) outside the seeded pool. */
   streakedCells: number;
+  /** Strokes that started in fresh agar (not on the pool or a prior streak). */
+  unlinkedStrokes: number;
   flaws: TechniqueFlaw[];
 }
 
@@ -32,6 +39,8 @@ const FLAW_TIPS: Record<TechniqueFlawId, string> = {
     'You re-covered streaked agar, so it grew heavy. Drag into fresh agar instead of crossing your own streaks.',
   underuse:
     'Spread your strokes across the dish so colonies have room to separate.',
+  unlinked:
+    'Your quadrants started in fresh agar. Before dragging a new quadrant out, cross your previous streak a few times to carry a little inoculum over.',
 };
 
 /**
@@ -54,13 +63,45 @@ export function analyzeTechnique(
   const cell = (2 * half) / res;
   const poolExclR2 = POOL.radius * POOL.radius;
 
-  // Inoculum re-entries + path-overlap counts in one walk over the strokes.
-  // Re-entries: outside→inside transitions into the pool, per stroke. Overlap:
-  // how often the path re-covers the same cell (excluding the inoculum).
+  // One chronological walk over the strokes computes three things:
+  //  - poolEntries: outside→inside transitions into the inoculum disc, per stroke.
+  //  - hits/totalPoints: how often the path re-covers a cell (over-crossing).
+  //  - unlinkedStrokes: strokes whose START is in fresh agar — not near the pool
+  //    and not near any EARLIER stroke (a disconnected quadrant). `footprint`
+  //    accumulates prior strokes' non-pool cells; each start is tested against it
+  //    BEFORE this stroke is added, so a stroke never links to itself.
   let poolEntries = 0;
+  let unlinkedStrokes = 0;
   const hits = new Int32Array(res * res);
+  const footprint = new Uint8Array(res * res);
+  const linkCells = Math.ceil(TECHNIQUE.LINK_RADIUS / cell);
   let totalPoints = 0;
   for (const stroke of strokes) {
+    if (stroke.points.length >= 2) {
+      const s = stroke.points[0];
+      const sdx = s.x - px;
+      const sdz = s.z - pz;
+      let linked = sdx * sdx + sdz * sdz <= poolTouchR2; // started on the inoculum
+      const sc = !linked ? cellIndex(field, s.x, s.z) : null;
+      if (sc !== null) {
+        const scol = sc % res;
+        const srow = (sc - scol) / res;
+        for (let dr = -linkCells; dr <= linkCells && !linked; dr++) {
+          const rr = srow + dr;
+          if (rr < 0 || rr >= res) continue;
+          for (let dc = -linkCells; dc <= linkCells; dc++) {
+            const cc = scol + dc;
+            if (cc < 0 || cc >= res) continue;
+            if (footprint[rr * res + cc]) {
+              linked = true;
+              break;
+            }
+          }
+        }
+      }
+      if (!linked) unlinkedStrokes++;
+    }
+
     let inside = false;
     for (const p of stroke.points) {
       const dx = p.x - px;
@@ -74,6 +115,7 @@ export function analyzeTechnique(
         if (ci !== null) {
           hits[ci]++;
           totalPoints++;
+          footprint[ci] = 1;
         }
       }
     }
@@ -139,6 +181,17 @@ export function analyzeTechnique(
   if (streakedEnough && plateCoverage < TECHNIQUE.WHOLE_PLATE_MIN) {
     flaws.push({ id: 'underuse', tip: FLAW_TIPS.underuse });
   }
+  if (unlinkedStrokes >= TECHNIQUE.MAX_UNLINKED) {
+    flaws.push({ id: 'unlinked', tip: FLAW_TIPS.unlinked });
+  }
 
-  return { poolEntries, rotations, overlapRatio, plateCoverage, streakedCells, flaws };
+  return {
+    poolEntries,
+    rotations,
+    overlapRatio,
+    plateCoverage,
+    streakedCells,
+    unlinkedStrokes,
+    flaws,
+  };
 }
