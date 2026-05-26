@@ -47,8 +47,9 @@ describe('generateColonies', () => {
   });
 
   it('grows more colonies as density rises', () => {
-    const low = generateColonies(uniformField(0.1)).length;
-    const high = generateColonies(uniformField(0.6)).length;
+    // Densities within the streak range (the steep curve saturates by ~0.04).
+    const low = generateColonies(uniformField(0.005)).length;
+    const high = generateColonies(uniformField(0.02)).length;
     expect(high).toBeGreaterThan(low);
   });
 

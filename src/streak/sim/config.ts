@@ -123,18 +123,20 @@ export const GROWTH = {
   MIN_VIABLE: STREAK_FIELD.MARK_MIN_DEPOSIT,
   /**
    * Expected colony seeds per cell: λ = SEED_BASELINE + SEED_RATE·density^SEED_EXP,
-   * clamped to MAX_PER_CELL. The sub-linear exponent compresses the wide
-   * density range (pool D≈1 vs diluted tails D≈0.005) so dense zones saturate
-   * into a confluent lawn while dilute zones scatter separated single colonies.
-   * SEED_BASELINE is a small "luck floor": a lucky lone ancestor can drop off
-   * the loop anywhere a streak was laid, so every marked cell has a nonzero
-   * chance — coverage is always rewarded. Per-cell mulberry32 keeps it
-   * deterministic/testable.
+   * clamped to MAX_PER_CELL. The streak field self-limits density to a narrow
+   * band (~0.0004 near the dilute tails up to ~0.04 at a freshly-loaded head;
+   * only the seeded pool reaches ~1), so the curve is deliberately *steep*: it
+   * saturates to a confluent lawn by ~0.04 (the first-streak head), grades down
+   * through clustered "satellite" colonies in the mid band, and thins to
+   * separated single colonies in the dilute tails. SEED_BASELINE is a small
+   * "luck floor": a lucky lone ancestor can drop off the loop anywhere a streak
+   * was laid, so every marked cell has a nonzero chance — coverage is always
+   * rewarded. Per-cell mulberry32 keeps it deterministic/testable.
    */
   SEED_BASELINE: 0.03,
-  SEED_RATE: 2.5,
-  SEED_EXP: 0.5,
-  MAX_PER_CELL: 3,
+  SEED_RATE: 2000,
+  SEED_EXP: 1.9,
+  MAX_PER_CELL: 4,
   /** Final colony radius (world units); near-constant regardless of density. */
   COLONY_RADIUS: 0.07,
   /** Fractional radius variation per colony (deterministic jitter). */
@@ -147,9 +149,13 @@ export const GROWTH = {
   CONFLUENT_D: 0.3,
   /** How many confluent cells constitute a real lawn zone (gradient evidence). */
   CONFLUENT_MIN_CELLS: 30,
-  /** Isolated-colony counts for the ballpark grade. */
-  GOOD_ISO: 6,
-  GREAT_ISO: 18,
+  /**
+   * Isolated-colony counts for the ballpark grade. Calibrated to the steep
+   * seeding curve: the dense head merges into a lawn, so isolated singles come
+   * from the dilute tails — a clean serial dilution yields ~15-20 of them.
+   */
+  GOOD_ISO: 5,
+  GREAT_ISO: 12,
 } as const;
 
 /**
