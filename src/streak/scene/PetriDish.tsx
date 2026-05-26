@@ -5,10 +5,17 @@ import { useStreakStore } from '../store';
 import { StreakStep } from '../sim/types';
 import { PLATE, POOL, PLATE_ROTATION } from '../sim/config';
 import { StreakMarks } from './StreakMarks';
+import { Colonies } from './Colonies';
 
 const GUIDE_Y = PLATE.surfaceY + 0.011;
 const GUIDE_LEN = PLATE.radius * 2 * 0.92;
 const ROT_DAMP = 3000 / PLATE_ROTATION.TRANSITION_MS;
+
+// Fresh agar is a pale amber; as the plate incubates it deepens to a dark
+// grey-green so the bright off-white colonies read with strong contrast —
+// matching how a grown plate photographs (white growth on dark medium).
+const AGAR_FRESH = new THREE.Color('#e9dcab');
+const AGAR_GROWN = new THREE.Color('#4f574a');
 
 /**
  * The agar plate. A static shell (agar disc, rim, fixed quadrant cross,
@@ -24,16 +31,31 @@ export function PetriDish() {
   const showHoverRing = step === StreakStep.STREAK && hoverTarget?.kind === 'plate';
 
   const agar = useRef<THREE.Group>(null);
+  const discMat = useRef<THREE.MeshStandardMaterial>(null);
+  const poolMat = useRef<THREE.MeshStandardMaterial>(null);
 
   useFrame((_, dt) => {
+    const { plateRotation, rotating, finishRotation, step } =
+      useStreakStore.getState();
+
     const g = agar.current;
-    if (!g) return;
-    const { plateRotation, rotating, finishRotation } = useStreakStore.getState();
-    g.rotation.y = THREE.MathUtils.damp(g.rotation.y, plateRotation, ROT_DAMP, dt);
-    if (rotating && Math.abs(g.rotation.y - plateRotation) < 0.002) {
-      g.rotation.y = plateRotation;
-      finishRotation();
+    if (g) {
+      g.rotation.y = THREE.MathUtils.damp(g.rotation.y, plateRotation, ROT_DAMP, dt);
+      if (rotating && Math.abs(g.rotation.y - plateRotation) < 0.002) {
+        g.rotation.y = plateRotation;
+        finishRotation();
+      }
     }
+
+    // Deepen the agar as it incubates (and ease back on reset). Slow damp so
+    // it darkens over the growth time-lapse rather than snapping.
+    const grown = step === StreakStep.INCUBATE || step === StreakStep.COMPLETE;
+    const k = 1 - Math.exp(-1.2 * dt);
+    const mat = discMat.current;
+    if (mat) mat.color.lerp(grown ? AGAR_GROWN : AGAR_FRESH, k);
+    // Let the grown colonies overtake the raw inoculum drop.
+    const pm = poolMat.current;
+    if (pm) pm.opacity = THREE.MathUtils.damp(pm.opacity, grown ? 0 : 0.65, 4, dt);
   });
 
   return (
@@ -41,7 +63,7 @@ export function PetriDish() {
       {/* Agar */}
       <mesh position={[0, PLATE.surfaceY / 2, 0]} receiveShadow>
         <cylinderGeometry args={[PLATE.radius, PLATE.radius, PLATE.surfaceY, 64]} />
-        <meshStandardMaterial color="#e9dcab" roughness={0.95} metalness={0} />
+        <meshStandardMaterial ref={discMat} color="#e9dcab" roughness={0.95} metalness={0} />
       </mesh>
 
       {/* Dish rim */}
@@ -66,6 +88,7 @@ export function PetriDish() {
         <mesh position={[POOL.position[0], POOL.position[1] + 0.02, POOL.position[2]]}>
           <sphereGeometry args={[POOL.radius, 24, 16, 0, Math.PI * 2, 0, Math.PI / 2]} />
           <meshStandardMaterial
+            ref={poolMat}
             color="#dfe6c8"
             transparent
             opacity={0.65}
@@ -76,6 +99,7 @@ export function PetriDish() {
         </mesh>
 
         <StreakMarks />
+        <Colonies />
       </group>
 
       {/* Hover ring when aiming at the plate with the loop */}

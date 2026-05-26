@@ -26,15 +26,17 @@ export function StreakCursor({ pointerRef }: CursorProps) {
     const mesh = meshRef.current;
     const mat = matRef.current;
     if (!mesh || !mat) return;
+    const { step, hoverTarget, rotating } = useStreakStore.getState();
     const p = pointerRef.current;
-    if (!p) {
+    // Only an aiming aid for the interactive steps; gone once incubating.
+    const interactive = step === StreakStep.GET_LOOP || step === StreakStep.STREAK;
+    if (!p || !interactive) {
       mesh.visible = false;
       return;
     }
     mesh.visible = true;
     mesh.position.set(p.x, 0.02, p.z);
 
-    const { step, hoverTarget, rotating } = useStreakStore.getState();
     const ready =
       step === StreakStep.GET_LOOP
         ? hoverTarget?.kind === 'loop-holder'

@@ -99,6 +99,47 @@ export const STREAK_FIELD = {
   MARK_MIN_DEPOSIT: 0.0004,
 } as const;
 
+/**
+ * Incubation + colony growth. After streaking, the player incubates: over
+ * DURATION_MS we time-lapse discrete colonies emerging from the density
+ * field. A colony's size is roughly constant (biology) — density controls
+ * *how many* colonies seed, not how big each grows. So dilute zones resolve
+ * into a few separated single colonies (the goal) while dense zones pack
+ * many overlapping colonies into a confluent lawn (uncountable). Grading
+ * keys off how many well-separated isolated colonies appear.
+ */
+export const INCUBATION = {
+  /** Time-lapse length for colonies to grow from nothing to full size. */
+  DURATION_MS: 6000,
+} as const;
+
+export const GROWTH = {
+  /** Cells below this density don't seed any colonies. */
+  MIN_VIABLE: 0.008,
+  /**
+   * Expected colony seeds per cell = SEED_RATE · density^SEED_EXP, clamped
+   * to MAX_PER_CELL. The sub-linear exponent compresses the ~40× density
+   * gap between the pool (D≈1) and the diluted streak tails (D≈0.02) so the
+   * tails still scatter a few separated single colonies (the goal) while the
+   * pool/dense streaks saturate into a confluent lawn. The per-cell cap stops
+   * dense cells from exploding the colony count (and starving the cap).
+   */
+  SEED_RATE: 2.5,
+  SEED_EXP: 0.5,
+  MAX_PER_CELL: 3,
+  /** Final colony radius (world units); near-constant regardless of density. */
+  COLONY_RADIUS: 0.07,
+  /** Fractional radius variation per colony (deterministic jitter). */
+  RADIUS_JITTER: 0.3,
+  /** Buffer + perf cap on total colonies generated. */
+  MAX_COLONIES: 1400,
+  /** Two colony centers closer than this count as touching (not isolated). */
+  ISOLATION_DIST: 0.16,
+  /** Isolated-colony counts for the ballpark grade. */
+  GOOD_MIN: 4,
+  GREAT_MIN: 12,
+} as const;
+
 /** Stroke-recording bounds (decimation + caps keep buffers bounded). */
 export const PATH = {
   MIN_SPACING: 0.03,

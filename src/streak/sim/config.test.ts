@@ -8,6 +8,8 @@ import {
   STREAK_FIELD,
   PATH,
   PLATE_ROTATION,
+  INCUBATION,
+  GROWTH,
 } from './config';
 
 describe('streak config invariants', () => {
@@ -67,6 +69,23 @@ describe('streak config invariants', () => {
     expect(PATH.MIN_SPACING).toBeGreaterThan(0);
     expect(PATH.MAX_POINTS_PER_STROKE).toBeGreaterThan(0);
     expect(PATH.MAX_STROKES).toBeGreaterThan(0);
+  });
+
+  it('defines a positive incubation duration', () => {
+    expect(INCUBATION.DURATION_MS).toBeGreaterThan(0);
+  });
+
+  it('defines sane colony-growth constants', () => {
+    expect(GROWTH.MIN_VIABLE).toBeGreaterThan(0);
+    expect(GROWTH.SEED_RATE).toBeGreaterThan(0);
+    expect(GROWTH.SEED_EXP).toBeGreaterThan(0);
+    expect(GROWTH.MAX_PER_CELL).toBeGreaterThan(0);
+    expect(GROWTH.COLONY_RADIUS).toBeGreaterThan(0);
+    expect(GROWTH.RADIUS_JITTER).toBeGreaterThanOrEqual(0);
+    expect(GROWTH.MAX_COLONIES).toBeGreaterThan(0);
+    expect(GROWTH.ISOLATION_DIST).toBeGreaterThan(0);
+    expect(GROWTH.GOOD_MIN).toBeGreaterThan(0);
+    expect(GROWTH.GREAT_MIN).toBeGreaterThanOrEqual(GROWTH.GOOD_MIN);
   });
 
   it('rotates a quarter turn counter-clockwise', () => {

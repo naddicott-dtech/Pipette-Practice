@@ -2,6 +2,7 @@ import { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useStreakStore } from '../store';
+import { StreakStep } from '../sim/types';
 import { PATH, PLATE } from '../sim/config';
 
 const MAX_INSTANCES = PATH.MAX_STROKES * PATH.MAX_POINTS_PER_STROKE;
@@ -37,13 +38,24 @@ const color = new THREE.Color();
  */
 export function StreakMarks() {
   const ref = useRef<THREE.InstancedMesh>(null);
+  const matRef = useRef<THREE.MeshStandardMaterial>(null);
   const lastTotal = useRef(-1);
 
-  useFrame(() => {
+  useFrame((_, dt) => {
     const mesh = ref.current;
     if (!mesh) return;
 
-    const { strokes } = useStreakStore.getState();
+    const { strokes, step } = useStreakStore.getState();
+
+    // Recede the loop tracks once incubating so the grown colonies — not the
+    // gold streak trail — read as the result. Eased every frame (outside the
+    // geometry dirty-check below, which only governs instance rebuilds).
+    const mat = matRef.current;
+    if (mat) {
+      const target =
+        step === StreakStep.INCUBATE || step === StreakStep.COMPLETE ? 0.12 : 1;
+      mat.opacity = THREE.MathUtils.damp(mat.opacity, target, 4, dt);
+    }
 
     // Skip the rebuild when no points were added/removed since last frame
     // (the common case: loop up, or nothing newly deposited).
@@ -81,7 +93,7 @@ export function StreakMarks() {
       castShadow={false}
     >
       <sphereGeometry args={[1, 8, 6]} />
-      <meshStandardMaterial roughness={0.55} metalness={0} />
+      <meshStandardMaterial ref={matRef} roughness={0.55} metalness={0} transparent />
     </instancedMesh>
   );
 }
