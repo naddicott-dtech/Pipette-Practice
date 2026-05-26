@@ -123,18 +123,20 @@ export const GROWTH = {
   MIN_VIABLE: STREAK_FIELD.MARK_MIN_DEPOSIT,
   /**
    * Expected colony seeds per cell: λ = SEED_BASELINE + SEED_RATE·density^SEED_EXP,
-   * clamped to MAX_PER_CELL. The sub-linear exponent compresses the wide
-   * density range (pool D≈1 vs diluted tails D≈0.005) so dense zones saturate
-   * into a confluent lawn while dilute zones scatter separated single colonies.
-   * SEED_BASELINE is a small "luck floor": a lucky lone ancestor can drop off
-   * the loop anywhere a streak was laid, so every marked cell has a nonzero
-   * chance — coverage is always rewarded. Per-cell mulberry32 keeps it
-   * deterministic/testable.
+   * clamped to MAX_PER_CELL. The streak field self-limits density to a narrow
+   * band (~0.0004 near the dilute tails up to ~0.04 at a freshly-loaded head;
+   * only the seeded pool reaches ~1), so the curve is deliberately *steep*: it
+   * saturates to a confluent lawn by ~0.04 (the first-streak head), grades down
+   * through clustered "satellite" colonies in the mid band, and thins to
+   * separated single colonies in the dilute tails. SEED_BASELINE is a small
+   * "luck floor": a lucky lone ancestor can drop off the loop anywhere a streak
+   * was laid, so every marked cell has a nonzero chance — coverage is always
+   * rewarded. Per-cell mulberry32 keeps it deterministic/testable.
    */
   SEED_BASELINE: 0.03,
-  SEED_RATE: 2.5,
-  SEED_EXP: 0.5,
-  MAX_PER_CELL: 3,
+  SEED_RATE: 2000,
+  SEED_EXP: 1.9,
+  MAX_PER_CELL: 4,
   /** Final colony radius (world units); near-constant regardless of density. */
   COLONY_RADIUS: 0.07,
   /** Fractional radius variation per colony (deterministic jitter). */
@@ -147,9 +149,48 @@ export const GROWTH = {
   CONFLUENT_D: 0.3,
   /** How many confluent cells constitute a real lawn zone (gradient evidence). */
   CONFLUENT_MIN_CELLS: 30,
-  /** Isolated-colony counts for the ballpark grade. */
-  GOOD_ISO: 6,
-  GREAT_ISO: 18,
+  /**
+   * Isolated-colony counts for the ballpark grade. Calibrated to the steep
+   * seeding curve: the dense head merges into a lawn, so isolated singles come
+   * from the dilute tails — a clean serial dilution yields ~15-20 of them.
+   */
+  GOOD_ISO: 5,
+  GREAT_ISO: 12,
+} as const;
+
+/**
+ * Technique analysis — grades *how* the plate was streaked, not just what
+ * grew. The colony outcome can look great by accident (e.g. a "starburst" of
+ * lines all re-dipped from the inoculum still scatters isolated colonies), so
+ * these path-derived checks catch sloppy technique and cap the headline grade.
+ * Thresholds are heuristic and tuned against scripted runs; tweak freely.
+ */
+export const TECHNIQUE = {
+  /** Multiplier on POOL.radius for "the loop is back in the inoculum". */
+  POOL_TOUCH_FACTOR: 1.1,
+  /**
+   * Re-dipping flaw at/above this many inoculum re-entries. Proper serial
+   * dilution dips the pool once (zone 1) then never returns; a starburst dips
+   * on every line. Tolerant of an enthusiastic multi-stroke zone 1.
+   */
+  REDIP_MAX_ENTRIES: 6,
+  /** Min streaked cells (outside the pool) before quadrant/coverage flaws apply. */
+  MIN_STREAKED: 30,
+  /**
+   * Over-crossing is measured geometrically, not by density: the dilution model
+   * self-limits a cell's density to ~0.02 at equilibrium, so re-streaking never
+   * builds a "heavy" cell. Instead, a cell whose path-point hit count reaches
+   * OVERLAP_HITS has been crossed ~3-4 times — the player re-covered streaked
+   * agar. (A single pass leaves ~1-2 points per cell; a good zone-to-zone link
+   * crosses the prior streak only a few times, staying under this.)
+   */
+  OVERLAP_HITS: 6,
+  /** Over-crossing flaw when this fraction of stroke points land in re-crossed cells. */
+  OVERSMEAR_RATIO: 0.3,
+  /** Coarse occupancy grid for the "use the whole plate" check. */
+  COVERAGE_BINS: 8,
+  /** Underuse flaw when occupied in-disc bins fall below this fraction. */
+  WHOLE_PLATE_MIN: 0.25,
 } as const;
 
 /** Stroke-recording bounds (decimation + caps keep buffers bounded). */

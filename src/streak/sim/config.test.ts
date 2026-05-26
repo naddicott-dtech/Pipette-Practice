@@ -10,6 +10,7 @@ import {
   PLATE_ROTATION,
   INCUBATION,
   GROWTH,
+  TECHNIQUE,
 } from './config';
 
 describe('streak config invariants', () => {
@@ -98,5 +99,18 @@ describe('streak config invariants', () => {
     // Positive rotation.y is CCW from the top-down streak camera.
     expect(PLATE_ROTATION.STEP).toBe(Math.PI / 2);
     expect(PLATE_ROTATION.TRANSITION_MS).toBeGreaterThan(0);
+  });
+
+  it('defines sane technique-analysis constants', () => {
+    expect(TECHNIQUE.POOL_TOUCH_FACTOR).toBeGreaterThanOrEqual(1);
+    expect(TECHNIQUE.REDIP_MAX_ENTRIES).toBeGreaterThan(1);
+    expect(TECHNIQUE.MIN_STREAKED).toBeGreaterThan(0);
+    // Over-crossing is a path-revisit count, not a density (the field self-limits).
+    expect(TECHNIQUE.OVERLAP_HITS).toBeGreaterThan(2);
+    expect(TECHNIQUE.OVERSMEAR_RATIO).toBeGreaterThan(0);
+    expect(TECHNIQUE.OVERSMEAR_RATIO).toBeLessThanOrEqual(1);
+    expect(TECHNIQUE.COVERAGE_BINS).toBeGreaterThanOrEqual(2);
+    expect(TECHNIQUE.WHOLE_PLATE_MIN).toBeGreaterThan(0);
+    expect(TECHNIQUE.WHOLE_PLATE_MIN).toBeLessThanOrEqual(1);
   });
 });

@@ -4,9 +4,12 @@ import {
   generateColonies,
   growthRadius,
   classifyStreak,
+  gradeStreak,
+  ceilingForFlaws,
   type Colony,
 } from './growth';
-import { GROWTH, POOL, STREAK_FIELD } from './config';
+import { GROWTH, POOL, STREAK_FIELD, PLATE_ROTATION } from './config';
+import type { Stroke } from './path';
 
 function uniformField(density: number, res = 32, half = 3): StreakField {
   const f = createField(res, half);
@@ -44,8 +47,9 @@ describe('generateColonies', () => {
   });
 
   it('grows more colonies as density rises', () => {
-    const low = generateColonies(uniformField(0.1)).length;
-    const high = generateColonies(uniformField(0.6)).length;
+    // Densities within the streak range (the steep curve saturates by ~0.04).
+    const low = generateColonies(uniformField(0.005)).length;
+    const high = generateColonies(uniformField(0.02)).length;
     expect(high).toBeGreaterThan(low);
   });
 
@@ -54,9 +58,11 @@ describe('generateColonies', () => {
     // the diluted-tail band that used to grow nothing. It must now grow some.
     const faint = generateColonies(uniformField(0.003));
     expect(faint.length).toBeGreaterThan(0);
-    // ...but far fewer than a dense field (a scatter, not a lawn).
-    const dense = generateColonies(uniformField(0.6));
-    expect(faint.length).toBeLessThan(dense.length);
+    // ...but far fewer than a denser mid-band streak — still within the streak
+    // range and below the curve's ~0.04 saturation, so this probes the gradient
+    // (vs. comparing against a clamped lawn, which any density >0.04 would give).
+    const denser = generateColonies(uniformField(0.02));
+    expect(faint.length).toBeLessThan(denser.length);
   });
 
   it('respects the MAX_COLONIES cap', () => {
@@ -65,12 +71,12 @@ describe('generateColonies', () => {
   });
 
   it('clamps per-cell seeding to MAX_PER_CELL', () => {
-    // A small saturated field so the MAX_COLONIES cap can't mask the per-cell
-    // clamp: every cell is at DMAX, where lambda would otherwise exceed the cap.
+    // At DMAX the steep curve's raw lambda is ~2000 — far above the cap — so a
+    // saturated field (small enough that the MAX_COLONIES cap can't mask it)
+    // must land EXACTLY MAX_PER_CELL colonies in every cell, no more.
     const res = 8;
     const colonies = generateColonies(uniformField(STREAK_FIELD.DMAX, res));
-    expect(colonies.length).toBeLessThanOrEqual(res * res * GROWTH.MAX_PER_CELL);
-    expect(colonies.length).toBeGreaterThan(res * res); // more than one per cell
+    expect(colonies.length).toBe(res * res * GROWTH.MAX_PER_CELL);
   });
 });
 
@@ -136,5 +142,83 @@ describe('classifyStreak', () => {
   it('grades near-empty growth as ok', () => {
     expect(classifyStreak([], emptyField()).grade).toBe('ok');
     expect(classifyStreak([{ x: 0, z: 0, r: GROWTH.COLONY_RADIUS }], emptyField()).grade).toBe('ok');
+  });
+});
+
+describe('ceilingForFlaws', () => {
+  it('lowers the grade ceiling one tier per flaw', () => {
+    expect(ceilingForFlaws(0)).toBe('great');
+    expect(ceilingForFlaws(1)).toBe('good');
+    expect(ceilingForFlaws(2)).toBe('ok');
+    expect(ceilingForFlaws(4)).toBe('ok');
+  });
+});
+
+describe('gradeStreak — technique caps the outcome grade', () => {
+  const PX = POOL.position[0];
+  const PZ = POOL.position[2];
+
+  // A great colony OUTCOME: spaced isolated colonies + a confluent field.
+  const greatColonies = (): Colony[] => {
+    const gap = GROWTH.ISOLATION_DIST * 3;
+    const out: Colony[] = [];
+    for (let i = 0; i < GROWTH.GREAT_ISO + 2; i++) {
+      out.push({ x: i * gap, z: 0, r: GROWTH.COLONY_RADIUS });
+    }
+    return out;
+  };
+  // Realistic plate: a confluent inoculum pool (so the outcome can be "great")
+  // plus a wide dilute streak band. The single test stroke never re-crosses the
+  // band, so overlapRatio stays 0 and no smear flaw fires (oversmear is a
+  // path-revisit metric, independent of this band's density).
+  const realisticField = (): StreakField => {
+    const f = createField();
+    seedPool(f, PX, PZ, POOL.radius, STREAK_FIELD.POOL_DENSITY);
+    const { res } = f;
+    for (let row = 10; row < res - 10; row++) {
+      for (let col = 10; col < res - 10; col++) {
+        f.data[row * res + col] = Math.max(f.data[row * res + col], 0.02);
+      }
+    }
+    return f;
+  };
+  const line = (ax: number, az: number, bx: number, bz: number, n = 40): Stroke => {
+    const points = [];
+    for (let k = 0; k <= n; k++) {
+      const t = k / n;
+      points.push({ x: ax + (bx - ax) * t, z: az + (bz - az) * t, deposit: 0.02 });
+    }
+    return { points };
+  };
+
+  it('keeps a great outcome great when technique is clean', () => {
+    // One pool dip, three rotations, spread streaks → no flaws.
+    const strokes = [line(PX, PZ, 2, 2)];
+    const a = gradeStreak(greatColonies(), realisticField(), strokes, 3 * PLATE_ROTATION.STEP);
+    expect(a.flaws).toHaveLength(0);
+    expect(a.outcomeGrade).toBe('great');
+    expect(a.grade).toBe('great');
+  });
+
+  it('caps a great outcome to ok for a re-dipping, no-rotation starburst', () => {
+    const strokes = [
+      line(PX, PZ, 2.5, 0),
+      line(PX, PZ, 2.5, 1.5),
+      line(PX, PZ, 0, 2.5),
+      line(PX, PZ, -2.5, 1.5),
+      line(PX, PZ, 2.5, -1.5),
+      line(PX, PZ, 1.5, 2.5),
+    ];
+    const a = gradeStreak(greatColonies(), realisticField(), strokes, 0);
+    expect(a.outcomeGrade).toBe('great');
+    expect(a.flaws.map((f) => f.id)).toEqual(
+      expect.arrayContaining(['redipping', 'noQuadrants']),
+    );
+    expect(a.grade).toBe('ok'); // 2+ flaws → ok ceiling
+  });
+
+  it('exposes the rotation count for affirmation copy', () => {
+    const a = gradeStreak(greatColonies(), realisticField(), [line(PX, PZ, 2, 2)], 3 * PLATE_ROTATION.STEP);
+    expect(a.rotations).toBe(3);
   });
 });
