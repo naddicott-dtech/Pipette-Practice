@@ -77,6 +77,9 @@ describe('streak config invariants', () => {
 
   it('defines sane colony-growth constants', () => {
     expect(GROWTH.MIN_VIABLE).toBeGreaterThan(0);
+    // Anything that left a visible mark can grow (no sterile dead band).
+    expect(GROWTH.MIN_VIABLE).toBeLessThanOrEqual(STREAK_FIELD.MARK_MIN_DEPOSIT);
+    expect(GROWTH.SEED_BASELINE).toBeGreaterThan(0);
     expect(GROWTH.SEED_RATE).toBeGreaterThan(0);
     expect(GROWTH.SEED_EXP).toBeGreaterThan(0);
     expect(GROWTH.MAX_PER_CELL).toBeGreaterThan(0);
@@ -84,8 +87,11 @@ describe('streak config invariants', () => {
     expect(GROWTH.RADIUS_JITTER).toBeGreaterThanOrEqual(0);
     expect(GROWTH.MAX_COLONIES).toBeGreaterThan(0);
     expect(GROWTH.ISOLATION_DIST).toBeGreaterThan(0);
-    expect(GROWTH.GOOD_MIN).toBeGreaterThan(0);
-    expect(GROWTH.GREAT_MIN).toBeGreaterThanOrEqual(GROWTH.GOOD_MIN);
+    expect(GROWTH.CONFLUENT_D).toBeGreaterThan(0);
+    expect(GROWTH.CONFLUENT_D).toBeLessThanOrEqual(STREAK_FIELD.DMAX);
+    expect(GROWTH.CONFLUENT_MIN_CELLS).toBeGreaterThan(0);
+    expect(GROWTH.GOOD_ISO).toBeGreaterThan(0);
+    expect(GROWTH.GREAT_ISO).toBeGreaterThanOrEqual(GROWTH.GOOD_ISO);
   });
 
   it('rotates a quarter turn counter-clockwise', () => {

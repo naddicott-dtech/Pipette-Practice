@@ -11,19 +11,19 @@ const GRADE_COPY: Record<
 > = {
   great: {
     label: 'Great streaking',
-    gloss: 'Plenty of well-separated single colonies — easy to pick a clone.',
+    gloss: 'Confluent growth grading down to well-separated single colonies — pick a clone from the dilute zones.',
     badge: 'bg-emerald-900/60 text-emerald-200 border-emerald-500/40',
     icon: <Sparkles className="w-5 h-5 text-emerald-300" />,
   },
   good: {
     label: 'Good streaking',
-    gloss: 'A few isolated colonies grew — enough to pick from.',
+    gloss: 'Isolated single colonies grew — enough to pick from, though the dilution gradient is incomplete.',
     badge: 'bg-sky-900/60 text-sky-200 border-sky-500/40',
     icon: <CheckCircle2 className="w-5 h-5 text-sky-300" />,
   },
   ok: {
     label: 'OK streaking',
-    gloss: 'Mostly confluent growth — keep diluting so single colonies separate.',
+    gloss: 'Too few separated colonies — dilute across more quadrants so single colonies emerge.',
     badge: 'bg-amber-900/60 text-amber-200 border-amber-500/40',
     icon: <CircleDashed className="w-5 h-5 text-amber-300" />,
   },
@@ -53,10 +53,10 @@ export function StreakDebrief() {
   // start, and `step === COMPLETE` is set in the same tick they're frozen, so
   // a fresh snapshot here is current; recomputing keyed on `step` keeps the
   // O(n²) isolation pass out of unrelated renders.
-  const verdict = useMemo(
-    () => classifyStreak(step === StreakStep.COMPLETE ? useStreakStore.getState().colonies : []),
-    [step],
-  );
+  const verdict = useMemo(() => {
+    const s = useStreakStore.getState();
+    return classifyStreak(step === StreakStep.COMPLETE ? s.colonies : [], s.field);
+  }, [step]);
   const copy = GRADE_COPY[verdict.grade];
 
   return (

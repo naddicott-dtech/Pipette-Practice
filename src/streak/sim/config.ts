@@ -114,16 +114,24 @@ export const INCUBATION = {
 } as const;
 
 export const GROWTH = {
-  /** Cells below this density don't seed any colonies. */
-  MIN_VIABLE: 0.008,
   /**
-   * Expected colony seeds per cell = SEED_RATE · density^SEED_EXP, clamped
-   * to MAX_PER_CELL. The sub-linear exponent compresses the ~40× density
-   * gap between the pool (D≈1) and the diluted streak tails (D≈0.02) so the
-   * tails still scatter a few separated single colonies (the goal) while the
-   * pool/dense streaks saturate into a confluent lawn. The per-cell cap stops
-   * dense cells from exploding the colony count (and starving the cap).
+   * Anything you streaked can grow. Tied to MARK_MIN_DEPOSIT — "if it left a
+   * mark, a cell can grow there" — so the diluted streak network isn't a
+   * visible-but-sterile dead band. The seeding curve (below) makes faint
+   * tails sparse, not empty.
    */
+  MIN_VIABLE: STREAK_FIELD.MARK_MIN_DEPOSIT,
+  /**
+   * Expected colony seeds per cell: λ = SEED_BASELINE + SEED_RATE·density^SEED_EXP,
+   * clamped to MAX_PER_CELL. The sub-linear exponent compresses the wide
+   * density range (pool D≈1 vs diluted tails D≈0.005) so dense zones saturate
+   * into a confluent lawn while dilute zones scatter separated single colonies.
+   * SEED_BASELINE is a small "luck floor": a lucky lone ancestor can drop off
+   * the loop anywhere a streak was laid, so every marked cell has a nonzero
+   * chance — coverage is always rewarded. Per-cell mulberry32 keeps it
+   * deterministic/testable.
+   */
+  SEED_BASELINE: 0.03,
   SEED_RATE: 2.5,
   SEED_EXP: 0.5,
   MAX_PER_CELL: 3,
@@ -131,13 +139,17 @@ export const GROWTH = {
   COLONY_RADIUS: 0.07,
   /** Fractional radius variation per colony (deterministic jitter). */
   RADIUS_JITTER: 0.3,
-  /** Buffer + perf cap on total colonies generated. */
-  MAX_COLONIES: 1400,
+  /** Buffer + perf cap on total colonies; a hit thins evenly (stride), not by row. */
+  MAX_COLONIES: 2500,
   /** Two colony centers closer than this count as touching (not isolated). */
   ISOLATION_DIST: 0.16,
+  /** Field density at/above which a cell counts as heavy/confluent growth. */
+  CONFLUENT_D: 0.3,
+  /** How many confluent cells constitute a real lawn zone (gradient evidence). */
+  CONFLUENT_MIN_CELLS: 30,
   /** Isolated-colony counts for the ballpark grade. */
-  GOOD_MIN: 4,
-  GREAT_MIN: 12,
+  GOOD_ISO: 6,
+  GREAT_ISO: 18,
 } as const;
 
 /** Stroke-recording bounds (decimation + caps keep buffers bounded). */
