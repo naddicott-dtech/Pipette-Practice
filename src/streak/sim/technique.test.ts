@@ -114,6 +114,34 @@ describe('analyzeTechnique — over-crossing (smear)', () => {
   });
 });
 
+describe('analyzeTechnique — linkage ("crossing the streams")', () => {
+  it('flags unlinked when quadrants start in fresh agar', () => {
+    // Zone 1 from the pool, then two quadrants that start far from the pool and
+    // from each other — disconnected islands. Rotated, so noQuadrants won't fire.
+    const strokes = [
+      line(PX, PZ, 0.5, -1.5), // zone 1, on the inoculum
+      line(1.5, 1.5, 2.6, 1.5), // disconnected (top-right)
+      line(-2.2, 1.4, -1.2, 2.0), // disconnected (top-left)
+    ];
+    const r = analyzeTechnique(strokes, 3 * PLATE_ROTATION.STEP, pooledField());
+    expect(r.unlinkedStrokes).toBeGreaterThanOrEqual(TECHNIQUE.MAX_UNLINKED);
+    expect(r.flaws.map((f) => f.id)).toContain('unlinked');
+  });
+
+  it('does not flag unlinked when each stroke starts on the previous one', () => {
+    // A connected chain: pool -> A -> B -> C, each stroke starting where the
+    // last ended (crossing the previous streak).
+    const strokes = [
+      line(PX, PZ, 1.0, -1.0),
+      line(1.0, -1.0, 1.5, 0.5),
+      line(1.5, 0.5, -0.5, 1.5),
+    ];
+    const r = analyzeTechnique(strokes, 3 * PLATE_ROTATION.STEP, pooledField());
+    expect(r.unlinkedStrokes).toBe(0);
+    expect(r.flaws.map((f) => f.id)).not.toContain('unlinked');
+  });
+});
+
 describe('analyzeTechnique — whole-plate use', () => {
   it('flags underuse when streaks are crammed into one corner', () => {
     const f = pooledField();

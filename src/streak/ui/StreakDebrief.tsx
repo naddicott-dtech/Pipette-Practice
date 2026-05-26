@@ -11,6 +11,7 @@ const FLAW_LABEL: Record<TechniqueFlawId, string> = {
   noQuadrants: 'Streak in quadrants',
   oversmear: 'Avoid over-crossing',
   underuse: 'Use the whole plate',
+  unlinked: 'Cross your previous streak',
 };
 
 const GRADE_COPY: Record<
