@@ -4,9 +4,12 @@ import {
   generateColonies,
   growthRadius,
   classifyStreak,
+  gradeStreak,
+  ceilingForFlaws,
   type Colony,
 } from './growth';
-import { GROWTH, POOL, STREAK_FIELD } from './config';
+import { GROWTH, POOL, STREAK_FIELD, PLATE_ROTATION } from './config';
+import type { Stroke } from './path';
 
 function uniformField(density: number, res = 32, half = 3): StreakField {
   const f = createField(res, half);
@@ -136,5 +139,81 @@ describe('classifyStreak', () => {
   it('grades near-empty growth as ok', () => {
     expect(classifyStreak([], emptyField()).grade).toBe('ok');
     expect(classifyStreak([{ x: 0, z: 0, r: GROWTH.COLONY_RADIUS }], emptyField()).grade).toBe('ok');
+  });
+});
+
+describe('ceilingForFlaws', () => {
+  it('lowers the grade ceiling one tier per flaw', () => {
+    expect(ceilingForFlaws(0)).toBe('great');
+    expect(ceilingForFlaws(1)).toBe('good');
+    expect(ceilingForFlaws(2)).toBe('ok');
+    expect(ceilingForFlaws(4)).toBe('ok');
+  });
+});
+
+describe('gradeStreak — technique caps the outcome grade', () => {
+  const PX = POOL.position[0];
+  const PZ = POOL.position[2];
+
+  // A great colony OUTCOME: spaced isolated colonies + a confluent field.
+  const greatColonies = (): Colony[] => {
+    const gap = GROWTH.ISOLATION_DIST * 3;
+    const out: Colony[] = [];
+    for (let i = 0; i < GROWTH.GREAT_ISO + 2; i++) {
+      out.push({ x: i * gap, z: 0, r: GROWTH.COLONY_RADIUS });
+    }
+    return out;
+  };
+  // Realistic plate: a confluent inoculum pool (so the outcome can be "great")
+  // plus a wide *dilute* streak band (below HEAVY_D, so no smear flaw).
+  const realisticField = (): StreakField => {
+    const f = createField();
+    seedPool(f, PX, PZ, POOL.radius, STREAK_FIELD.POOL_DENSITY);
+    const { res } = f;
+    for (let row = 10; row < res - 10; row++) {
+      for (let col = 10; col < res - 10; col++) {
+        f.data[row * res + col] = Math.max(f.data[row * res + col], 0.02);
+      }
+    }
+    return f;
+  };
+  const line = (ax: number, az: number, bx: number, bz: number, n = 40): Stroke => {
+    const points = [];
+    for (let k = 0; k <= n; k++) {
+      const t = k / n;
+      points.push({ x: ax + (bx - ax) * t, z: az + (bz - az) * t, deposit: 0.02 });
+    }
+    return { points };
+  };
+
+  it('keeps a great outcome great when technique is clean', () => {
+    // One pool dip, three rotations, spread streaks → no flaws.
+    const strokes = [line(PX, PZ, 2, 2)];
+    const a = gradeStreak(greatColonies(), realisticField(), strokes, 3 * PLATE_ROTATION.STEP);
+    expect(a.flaws).toHaveLength(0);
+    expect(a.outcomeGrade).toBe('great');
+    expect(a.grade).toBe('great');
+  });
+
+  it('caps a great outcome to ok for a re-dipping, no-rotation starburst', () => {
+    const strokes = [
+      line(PX, PZ, 2.5, 0),
+      line(PX, PZ, 2.5, 1.5),
+      line(PX, PZ, 0, 2.5),
+      line(PX, PZ, -2.5, 1.5),
+      line(PX, PZ, 2.5, -1.5),
+      line(PX, PZ, 1.5, 2.5),
+    ];
+    const a = gradeStreak(greatColonies(), realisticField(), strokes, 0);
+    expect(a.outcomeGrade).toBe('great');
+    expect(a.flaws.map((f) => f.id)).toEqual(
+      expect.arrayContaining(['redipping', 'noQuadrants']),
+    );
+    expect(a.grade).toBe('ok'); // 2+ flaws → ok ceiling
+  });
+
+  it('exposes the rotation count for affirmation copy', () => {
+    const a = gradeStreak(greatColonies(), realisticField(), [line(PX, PZ, 2, 2)], 3 * PLATE_ROTATION.STEP);
+    expect(a.rotations).toBe(3);
   });
 });

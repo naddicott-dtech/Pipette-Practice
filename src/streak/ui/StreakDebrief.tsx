@@ -1,9 +1,17 @@
 import { useState, useEffect, useRef, useMemo, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sparkles, CheckCircle2, CircleDashed, RotateCcw, X } from 'lucide-react';
+import { Sparkles, CheckCircle2, CircleDashed, RotateCcw, X, AlertTriangle } from 'lucide-react';
 import { useStreakStore } from '../store';
 import { StreakStep } from '../sim/types';
-import { classifyStreak, type StreakGrade } from '../sim/growth';
+import { gradeStreak, type StreakGrade } from '../sim/growth';
+import type { TechniqueFlawId } from '../sim/technique';
+
+const FLAW_LABEL: Record<TechniqueFlawId, string> = {
+  redipping: 'Don’t re-dip the inoculum',
+  noQuadrants: 'Streak in quadrants',
+  oversmear: 'Avoid over-crossing',
+  underuse: 'Use the whole plate',
+};
 
 const GRADE_COPY: Record<
   StreakGrade,
@@ -53,11 +61,21 @@ export function StreakDebrief() {
   // start, and `step === COMPLETE` is set in the same tick they're frozen, so
   // a fresh snapshot here is current; recomputing keyed on `step` keeps the
   // O(n²) isolation pass out of unrelated renders.
-  const verdict = useMemo(() => {
+  const assessment = useMemo(() => {
     const s = useStreakStore.getState();
-    return classifyStreak(step === StreakStep.COMPLETE ? s.colonies : [], s.field);
+    const complete = step === StreakStep.COMPLETE;
+    return gradeStreak(
+      complete ? s.colonies : [],
+      s.field,
+      complete ? s.strokes : [],
+      complete ? s.plateRotation : 0,
+    );
   }, [step]);
-  const copy = GRADE_COPY[verdict.grade];
+  const copy = GRADE_COPY[assessment.grade];
+  const hasFlaws = assessment.flaws.length > 0;
+  const gloss = hasFlaws
+    ? 'Isolated colonies grew, but the technique needs work — see what to improve below.'
+    : copy.gloss;
 
   return (
     <div className="absolute inset-x-0 bottom-6 pointer-events-none flex justify-center px-6 z-40">
@@ -79,12 +97,18 @@ export function StreakDebrief() {
                     <span
                       className={`text-[10px] uppercase tracking-widest px-2 py-0.5 rounded-full border ${copy.badge}`}
                     >
-                      {verdict.isolatedCount} isolated
+                      {assessment.isolatedCount} isolated
                     </span>
                   </div>
                   <p className="text-[12px] text-neutral-300 mt-0.5 leading-snug">
-                    {copy.gloss}
+                    {gloss}
                   </p>
+                  {!hasFlaws && assessment.rotations >= 1 && (
+                    <p className="text-[11px] text-emerald-300/90 mt-1 leading-snug">
+                      Clean serial dilution — rotated through {assessment.rotations}{' '}
+                      {assessment.rotations === 1 ? 'quadrant' : 'quadrants'}, no re-dipping.
+                    </p>
+                  )}
                 </div>
               </div>
               <button
@@ -98,6 +122,25 @@ export function StreakDebrief() {
                 <X className="w-4 h-4" />
               </button>
             </div>
+
+            {hasFlaws && (
+              <div className="bg-amber-950/40 rounded-xl p-3 border border-amber-500/20 mb-4">
+                <p className="text-[12px] font-semibold text-amber-200 mb-1.5 flex items-center gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  What to improve
+                </p>
+                <ul className="space-y-1.5 text-[11px] text-neutral-300 leading-snug">
+                  {assessment.flaws.map((flaw) => (
+                    <li key={flaw.id}>
+                      <span className="text-amber-100 font-medium">
+                        {FLAW_LABEL[flaw.id]}
+                      </span>{' '}
+                      — {flaw.tip}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
             <div className="bg-black/30 rounded-xl p-3 border border-white/10 mb-4">
               <p className="text-[12px] font-semibold text-neutral-100 mb-1.5">

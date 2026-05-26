@@ -12,7 +12,8 @@ import {
   seedPool,
   type StreakField,
 } from './sim/streakField';
-import { generateColonies, type Colony } from './sim/growth';
+import { generateColonies, gradeStreak, type Colony } from './sim/growth';
+import { analyzeTechnique } from './sim/technique';
 import {
   createStroke,
   pushPoint,
@@ -220,8 +221,19 @@ if (typeof window !== 'undefined' && import.meta.env.DEV) {
       points: number;
       deposits: number[];
     };
+    __streakAssess?: () => {
+      grade: ReturnType<typeof gradeStreak>;
+      tech: ReturnType<typeof analyzeTechnique>;
+    };
   };
   w.__streakStore = useStreakStore;
+  w.__streakAssess = () => {
+    const s = useStreakStore.getState();
+    return {
+      grade: gradeStreak(s.colonies, s.field, s.strokes, s.plateRotation),
+      tech: analyzeTechnique(s.strokes, s.plateRotation, s.field),
+    };
+  };
   w.__devStreak = (worldPts) => {
     const s = useStreakStore.getState();
     if (!s.hasLoop) s.pickUpLoop();

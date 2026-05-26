@@ -152,6 +152,41 @@ export const GROWTH = {
   GREAT_ISO: 18,
 } as const;
 
+/**
+ * Technique analysis — grades *how* the plate was streaked, not just what
+ * grew. The colony outcome can look great by accident (e.g. a "starburst" of
+ * lines all re-dipped from the inoculum still scatters isolated colonies), so
+ * these path-derived checks catch sloppy technique and cap the headline grade.
+ * Thresholds are heuristic and tuned against scripted runs; tweak freely.
+ */
+export const TECHNIQUE = {
+  /** Multiplier on POOL.radius for "the loop is back in the inoculum". */
+  POOL_TOUCH_FACTOR: 1.1,
+  /**
+   * Re-dipping flaw at/above this many inoculum re-entries. Proper serial
+   * dilution dips the pool once (zone 1) then never returns; a starburst dips
+   * on every line. Tolerant of an enthusiastic multi-stroke zone 1.
+   */
+  REDIP_MAX_ENTRIES: 6,
+  /** Min streaked cells (outside the pool) before quadrant/coverage flaws apply. */
+  MIN_STREAKED: 30,
+  /**
+   * Over-crossing is measured geometrically, not by density: the dilution model
+   * self-limits a cell's density to ~0.02 at equilibrium, so re-streaking never
+   * builds a "heavy" cell. Instead, a cell whose path-point hit count reaches
+   * OVERLAP_HITS has been crossed ~3-4 times — the player re-covered streaked
+   * agar. (A single pass leaves ~1-2 points per cell; a good zone-to-zone link
+   * crosses the prior streak only a few times, staying under this.)
+   */
+  OVERLAP_HITS: 6,
+  /** Over-crossing flaw when this fraction of stroke points land in re-crossed cells. */
+  OVERSMEAR_RATIO: 0.3,
+  /** Coarse occupancy grid for the "use the whole plate" check. */
+  COVERAGE_BINS: 8,
+  /** Underuse flaw when occupied in-disc bins fall below this fraction. */
+  WHOLE_PLATE_MIN: 0.25,
+} as const;
+
 /** Stroke-recording bounds (decimation + caps keep buffers bounded). */
 export const PATH = {
   MIN_SPACING: 0.03,

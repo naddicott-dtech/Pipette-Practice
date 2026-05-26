@@ -1,5 +1,7 @@
 import { GROWTH } from './config';
 import type { StreakField } from './streakField';
+import type { Stroke } from './path';
+import { analyzeTechnique, type TechniqueFlaw } from './technique';
 
 /**
  * A single bacterial colony grown from the density field. Center is in
@@ -140,4 +142,58 @@ export function classifyStreak(colonies: Colony[], field: StreakField): StreakVe
         : 'ok';
 
   return { grade, isolatedCount, total: n, hasConfluent };
+}
+
+const GRADE_RANK: Record<StreakGrade, number> = { ok: 0, good: 1, great: 2 };
+
+/**
+ * Highest grade allowed given a flaw count. Good technique earns the colony
+ * outcome on its own; each technique flaw lowers the ceiling one tier, so a
+ * great-looking outcome from sloppy technique (e.g. the re-dipping starburst)
+ * can't read as "Great".
+ */
+export function ceilingForFlaws(flawCount: number): StreakGrade {
+  return flawCount === 0 ? 'great' : flawCount === 1 ? 'good' : 'ok';
+}
+
+export interface StreakAssessment {
+  /** Final headline grade — the outcome grade capped by technique. */
+  grade: StreakGrade;
+  /** Outcome grade before the technique cap (for affirmation/debug copy). */
+  outcomeGrade: StreakGrade;
+  isolatedCount: number;
+  total: number;
+  hasConfluent: boolean;
+  /** Quarter-turns rotated during streaking (for affirmation copy). */
+  rotations: number;
+  flaws: TechniqueFlaw[];
+}
+
+/**
+ * Full debrief assessment: the colony outcome (classifyStreak) combined with a
+ * technique analysis of the recorded paths. Technique flaws cap the headline
+ * grade so that *how* you streaked — not just what happened to grow — decides
+ * the score.
+ */
+export function gradeStreak(
+  colonies: Colony[],
+  field: StreakField,
+  strokes: Stroke[],
+  plateRotation: number,
+): StreakAssessment {
+  const outcome = classifyStreak(colonies, field);
+  const tech = analyzeTechnique(strokes, plateRotation, field);
+  const ceiling = ceilingForFlaws(tech.flaws.length);
+  const grade =
+    GRADE_RANK[outcome.grade] <= GRADE_RANK[ceiling] ? outcome.grade : ceiling;
+
+  return {
+    grade,
+    outcomeGrade: outcome.grade,
+    isolatedCount: outcome.isolatedCount,
+    total: outcome.total,
+    hasConfluent: outcome.hasConfluent,
+    rotations: tech.rotations,
+    flaws: tech.flaws,
+  };
 }
